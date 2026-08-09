@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { CONFIG } from './config';
-import { apiService } from './services/api';
+import { apiService, onUnauthorized, getAuthToken, clearAuthToken } from './services/api';
 import {
   HomeView,
   CreateRequestView,
@@ -20,6 +20,7 @@ import {
   UserManagementView,
   PendingOrdersView,
   DepartmentManagementView,
+  AutomationPanel,
   Icons
 } from './components/Views';
 
@@ -43,17 +44,18 @@ export default function App() {
   const [webhookUrl, setWebhookUrl] = useState("");
   const [toasts, setToasts] = useState([]);
 
-  // User Session state
+  // User Session state. A cached user object is only trusted if a session
+  // token is also present - without one the backend will reject every
+  // request anyway, so there's nothing to optimistically render as logged in.
   const [currentUser, setCurrentUser] = useState(() => {
     try {
+      if (!getAuthToken()) return null;
       const savedUser = localStorage.getItem("pms_current_user");
       return savedUser ? JSON.parse(savedUser) : null;
     } catch {
       return null;
     }
   });
-  const [usersList, setUsersList] = useState([]);
-
   // Navigation Router state
   const [currentHash, setCurrentHash] = useState(window.location.hash || '#home');
 
@@ -74,6 +76,154 @@ export default function App() {
   // ----------------------------------------------------
   // DATA LOAD & SEED ROUTINES
   // ----------------------------------------------------
+  // Fetches requests/suppliers/logs and runs the auto-delay check for an
+  // authenticated session. Pulled out of the mount effect so it can also run
+  // right after a fresh login or a forced password change - the mount effect
+  // only fires once, but a brand-new session needs this data too.
+  const loadProtectedData = async (user) => {
+    // Mirrors the server-side guard on GET /logs (Main Admin, or Sub Admin
+    // with the view_logs permission) - only those roles can see the full
+    // audit trail, everyone else gets [] instead of a 403.
+    const canViewLogs = user.role === 'Main Admin' || (user.role === 'Sub Admin' && !!user.permissions?.view_logs);
+
+    const reqs = await apiService.getRequests();
+    const sups = await apiService.getSuppliers();
+    const auditLogs = canViewLogs ? await apiService.getLogs() : [];
+    const notifs = await apiService.getNotifications();
+    const whUrl = await apiService.getWebhookUrl();
+
+    setRequests(reqs);
+    setSuppliers(sups);
+    setLogs(auditLogs);
+    setNotifications(notifs);
+    setWebhookUrl(whUrl);
+
+    // Run automatic delay check using expectedDispatchDate (Requirement 7 & 8)
+    let delayModified = false;
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    const getRevertStatus = (r) => {
+      if (r.history && r.history.length > 0) {
+        for (let i = r.history.length - 1; i >= 0; i--) {
+          const h = r.history[i];
+          if (h.status && h.status !== "Delayed") {
+            return h.status;
+          }
+        }
+      }
+      return "No Response";
+    };
+
+    const updatedReqs = await Promise.all(reqs.map(async (req) => {
+      // If order has progressed to Booked, Received, or is Rejected, do not auto-delay
+      if (req.status === "Booked" || req.status === "Received" || req.status === "Rejected") {
+        return req;
+      }
+
+      let expDateStr = req.expectedDispatchDate ? req.expectedDispatchDate.split('T')[0] : null;
+      if (!expDateStr) {
+        const d = new Date(req.date);
+        d.setDate(d.getDate() + 3);
+        expDateStr = d.toISOString().split('T')[0];
+      }
+
+      const hasPassed = todayStr > expDateStr;
+
+      if (hasPassed && req.status !== "Delayed") {
+        delayModified = true;
+        const systemLog = {
+          status: "Delayed",
+          updatedBy: "System (Auto)",
+          role: "System",
+          timestamp: now.toISOString(),
+          remarks: `Order automatically marked as Delayed because expected dispatch date (${expDateStr}) has passed.`
+        };
+        const newHistory = [...(req.history || []), systemLog];
+        const updatedReq = {
+          ...req,
+          expectedDispatchDate: expDateStr,
+          status: "Delayed",
+          history: newHistory
+        };
+
+        await apiService.updateRequest(req.id, updatedReq);
+        return updatedReq;
+      } else if (!hasPassed && req.status === "Delayed") {
+        delayModified = true;
+        const revStatus = getRevertStatus(req);
+        const systemLog = {
+          status: revStatus,
+          updatedBy: "System (Auto)",
+          role: "System",
+          timestamp: now.toISOString(),
+          remarks: `Order status restored to ${revStatus} because revised expected dispatch date (${expDateStr}) is valid.`
+        };
+        const newHistory = [...(req.history || []), systemLog];
+        const updatedReq = {
+          ...req,
+          status: revStatus,
+          history: newHistory
+        };
+
+        await apiService.updateRequest(req.id, updatedReq);
+        return updatedReq;
+      }
+      return req;
+    }));
+
+    if (delayModified) {
+      setRequests(updatedReqs);
+
+      for (let idx = 0; idx < reqs.length; idx++) {
+        const oldReq = reqs[idx];
+        const newReq = updatedReqs[idx];
+        if (oldReq.status !== "Delayed" && newReq.status === "Delayed") {
+          const supplierObj = sups.find(s => s.id === newReq.supplierId);
+          const supplierName = supplierObj ? supplierObj.companyName : (newReq.suggestedSupplier || "Supplier Not Assigned");
+          const poNum = newReq.poNumber || newReq.id;
+          const expDate = newReq.expectedDispatchDate ? newReq.expectedDispatchDate.split('T')[0] : "N/A";
+
+          // Employee notification
+          await apiService.createNotification({
+            id: `notif-emp-${Date.now()}-${idx}`,
+            title: `⚠️ Order Delayed: ${poNum}`,
+            body: `Your request for "${newReq.productName}" (PO: ${poNum}) is delayed beyond expected dispatch date (${expDate}).`,
+            timestamp: now.toISOString(),
+            role: "Employee",
+            recipientName: newReq.employeeName
+          });
+          // Supplier / Admin notification
+          await apiService.createNotification({
+            id: `notif-sup-${Date.now()}-${idx}`,
+            title: `⚠️ Supplier Delay Notice: ${poNum}`,
+            body: `Dispatch notice for supplier "${supplierName}": Order PO ${poNum} is overdue. Expected: ${expDate}.`,
+            timestamp: now.toISOString(),
+            role: "Both"
+          });
+
+          const systemLogEvent = {
+            timestamp: now.toISOString(),
+            userName: "System (Auto)",
+            role: "System",
+            action: "Order Marked Delayed",
+            previousValue: oldReq.status,
+            updatedValue: "Delayed",
+            details: `PO: ${poNum} | Product: ${newReq.productName} | Supplier: ${supplierName} | Expected Dispatch: ${expDate} | Auto-flagged as Delayed.`
+          };
+          await apiService.addLog(systemLogEvent);
+        }
+      }
+
+      if (canViewLogs) {
+        const freshLogs = await apiService.getLogs();
+        setLogs(freshLogs);
+      }
+      const freshNotifs = await apiService.getNotifications();
+      setNotifications(freshNotifs);
+    }
+  };
+
   useEffect(() => {
     // Clock updater
     const updateTime = () => {
@@ -85,209 +235,40 @@ export default function App() {
 
     const loadData = async () => {
       try {
-        await apiService.initializeDefaultUsers();
-        const uList = await apiService.getUsers();
-        setUsersList(uList);
-
-        const savedUser = localStorage.getItem("pms_current_user");
-        if (savedUser) {
-          const userObj = JSON.parse(savedUser);
-          const dbUser = uList.find(u => u.id === userObj.id || u.username.toLowerCase() === userObj.username.toLowerCase());
-          if (dbUser) {
-            const isEnabled = dbUser.disabled ? false : (dbUser.enabled !== undefined ? dbUser.enabled : true);
-            if (!isEnabled) {
-              setCurrentUser(null);
-              localStorage.removeItem("pms_current_user");
-            } else {
-              const { passwordHash, ...safeDbUser } = dbUser;
-              setCurrentUser(safeDbUser);
-              localStorage.setItem("pms_current_user", JSON.stringify(safeDbUser));
-              setActiveRole(safeDbUser.role);
-            }
-          } else {
-            setCurrentUser(userObj);
-            setActiveRole(userObj.role);
-          }
-        }
-
-        const reqs = await apiService.getRequests();
-        const sups = await apiService.getSuppliers();
-        const auditLogs = await apiService.getLogs();
-
-        setRequests(reqs);
-        setSuppliers(sups);
-        setLogs(auditLogs);
-
-        // Run automatic delay check using expectedDispatchDate (Requirement 7 & 8)
-        let delayModified = false;
-        const now = new Date();
-        const todayStr = now.toISOString().split('T')[0];
-
-        const getRevertStatus = (r) => {
-          if (r.history && r.history.length > 0) {
-            for (let i = r.history.length - 1; i >= 0; i--) {
-              const h = r.history[i];
-              if (h.status && h.status !== "Delayed") {
-                return h.status;
-              }
-            }
-          }
-          return "No Response";
-        };
-
-        const updatedReqs = await Promise.all(reqs.map(async (req) => {
-          // If order has progressed to Booked, Received, or is Rejected, do not auto-delay
-          if (req.status === "Booked" || req.status === "Received" || req.status === "Rejected") {
-            return req;
-          }
-          
-          let expDateStr = req.expectedDispatchDate ? req.expectedDispatchDate.split('T')[0] : null;
-          if (!expDateStr) {
-            const d = new Date(req.date);
-            d.setDate(d.getDate() + 3);
-            expDateStr = d.toISOString().split('T')[0];
-          }
-          
-          const hasPassed = todayStr > expDateStr;
-          
-          if (hasPassed && req.status !== "Delayed") {
-            delayModified = true;
-            const systemLog = {
-              status: "Delayed",
-              updatedBy: "System (Auto)",
-              role: "System",
-              timestamp: now.toISOString(),
-              remarks: `Order automatically marked as Delayed because expected dispatch date (${expDateStr}) has passed.`
-            };
-            const newHistory = [...(req.history || []), systemLog];
-            const updatedReq = {
-              ...req,
-              expectedDispatchDate: expDateStr,
-              status: "Delayed",
-              history: newHistory
-            };
-            
-            await apiService.updateRequest(req.id, updatedReq);
-            return updatedReq;
-          } else if (!hasPassed && req.status === "Delayed") {
-            delayModified = true;
-            const revStatus = getRevertStatus(req);
-            const systemLog = {
-              status: revStatus,
-              updatedBy: "System (Auto)",
-              role: "System",
-              timestamp: now.toISOString(),
-              remarks: `Order status restored to ${revStatus} because revised expected dispatch date (${expDateStr}) is valid.`
-            };
-            const newHistory = [...(req.history || []), systemLog];
-            const updatedReq = {
-              ...req,
-              status: revStatus,
-              history: newHistory
-            };
-            
-            await apiService.updateRequest(req.id, updatedReq);
-            return updatedReq;
-          }
-          return req;
-        }));
-
-        if (delayModified) {
-          setRequests(updatedReqs);
-          
-          reqs.forEach((oldReq, idx) => {
-            const newReq = updatedReqs[idx];
-            if (oldReq.status !== "Delayed" && newReq.status === "Delayed") {
-              const supplierObj = sups.find(s => s.id === newReq.supplierId);
-              const supplierName = supplierObj ? supplierObj.companyName : (newReq.suggestedSupplier || "Supplier Not Assigned");
-              const poNum = newReq.poNumber || newReq.id;
-              const expDate = newReq.expectedDispatchDate ? newReq.expectedDispatchDate.split('T')[0] : "N/A";
-              
-              const title = `⚠️ Delay Alert: ${poNum}`;
-              const body = `PO Number: ${poNum}\nProduct: ${newReq.productName}\nSupplier: ${supplierName}\nExpected Dispatch Date: ${expDate}\nDelay Info: Order has exceeded expected dispatch date without progressing.`;
-              
-              const savedNotifs = JSON.parse(localStorage.getItem("pms_notifications")) || [];
-              // Employee notification
-              const empNotif = {
-                id: `notif-emp-${Date.now()}-${idx}`,
-                title: `⚠️ Order Delayed: ${poNum}`,
-                body: `Your request for "${newReq.productName}" (PO: ${poNum}) is delayed beyond expected dispatch date (${expDate}).`,
-                timestamp: now.toISOString(),
-                read: false,
-                role: "Employee",
-                recipientName: newReq.employeeName
-              };
-              // Supplier / Admin notification
-              const supNotif = {
-                id: `notif-sup-${Date.now()}-${idx}`,
-                title: `⚠️ Supplier Delay Notice: ${poNum}`,
-                body: `Dispatch notice for supplier "${supplierName}": Order PO ${poNum} is overdue. Expected: ${expDate}.`,
-                timestamp: now.toISOString(),
-                read: false,
-                role: "Both"
-              };
-              savedNotifs.unshift(empNotif, supNotif);
-              localStorage.setItem("pms_notifications", JSON.stringify(savedNotifs));
-              
-              const systemLogEvent = {
-                timestamp: now.toISOString(),
-                userName: "System (Auto)",
-                role: "System",
-                action: "Order Marked Delayed",
-                previousValue: oldReq.status,
-                updatedValue: "Delayed",
-                details: `PO: ${poNum} | Product: ${newReq.productName} | Supplier: ${supplierName} | Expected Dispatch: ${expDate} | Auto-flagged as Delayed.`
-              };
-              const savedLogs = JSON.parse(localStorage.getItem("pms_logs")) || CONFIG.initialLogs;
-              savedLogs.unshift(systemLogEvent);
-              localStorage.setItem("pms_logs", JSON.stringify(savedLogs));
-            }
-          });
-          
-          const freshLogs = await apiService.getLogs();
-          setLogs(freshLogs);
-          const freshNotifs = JSON.parse(localStorage.getItem("pms_notifications")) || [];
-          setNotifications(freshNotifs);
-        }
-
-        // Load custom branding if configured in local storage
-        const savedBranding = localStorage.getItem("pms_branding");
-        if (savedBranding) {
+        // Refresh the session against the real backend: this catches a token
+        // that expired while the tab was closed, or an account that was
+        // disabled/deleted since the last visit, and logs the user out
+        // cleanly instead of trusting the cached copy. Requests/suppliers/logs
+        // are only fetched once we know the session is actually valid, since
+        // those endpoints require authentication.
+        if (getAuthToken()) {
           try {
-            const parsed = JSON.parse(savedBranding);
-            if (parsed.appName && (parsed.appName.includes("Tamizhan") || parsed.companyName?.includes("Tamizhan"))) {
-              localStorage.clear();
-              window.location.reload();
-              return;
-            }
-            setBranding(parsed);
-          } catch (e) {
-            setBranding(JSON.parse(savedBranding));
+            const freshUser = await apiService.getCurrentUser();
+            setCurrentUser(freshUser);
+            localStorage.setItem("pms_current_user", JSON.stringify(freshUser));
+            setActiveRole(freshUser.role);
+            await loadProtectedData(freshUser);
+          } catch (err) {
+            setCurrentUser(null);
+            localStorage.removeItem("pms_current_user");
+            clearAuthToken();
           }
-        }
-
-        // Webhook URL
-        const whUrl = localStorage.getItem("pms_webhook_url") || "";
-        setWebhookUrl(whUrl);
-
-        // Notifications
-        const savedNotifs = localStorage.getItem("pms_notifications");
-        if (savedNotifs) {
-          setNotifications(JSON.parse(savedNotifs));
         } else {
-          const defaults = [
-            {
-              id: "notif-1",
-              title: "Welcome to Alagiri System",
-              body: "Get started by creating your first material request.",
-              timestamp: new Date().toISOString(),
-              read: false,
-              role: "Both"
-            }
-          ];
-          setNotifications(defaults);
-          localStorage.setItem("pms_notifications", JSON.stringify(defaults));
+          localStorage.removeItem("pms_current_user");
         }
+
+        // Branding is server-side and public (no auth needed) so it's correct
+        // even on the login screen, before anyone signs in.
+        try {
+          const remoteBranding = await apiService.getBranding();
+          const looksCorrupted = remoteBranding?.appName?.includes("Tamizhan") || remoteBranding?.companyName?.includes("Tamizhan");
+          setBranding(looksCorrupted || !remoteBranding?.appName ? CONFIG.branding : remoteBranding);
+        } catch (err) {
+          setBranding(CONFIG.branding);
+        }
+        // Notifications/webhook URL for an authenticated session are loaded
+        // as part of loadProtectedData() above; a logged-out visitor sees
+        // neither (both require auth server-side).
       } catch (err) {
         console.error("Error loading application state:", err);
       }
@@ -346,6 +327,22 @@ export default function App() {
     }, 4000);
   };
 
+  // Any API call that comes back 401 (expired token, or the account was
+  // disabled/deleted server-side while this tab was open) drops the session
+  // and returns to the login screen instead of leaving the UI silently broken.
+  useEffect(() => {
+    onUnauthorized(() => {
+      setCurrentUser(null);
+      localStorage.removeItem("pms_current_user");
+      showToast("Session Expired", "Please log in again.", "info");
+      window.location.hash = "#home";
+    });
+  }, []);
+
+  // Optimistic: update local state immediately for a snappy UI, persist to
+  // the shared backend in the background. A failed save just gets logged -
+  // matches how audit logs/webhooks already degrade (never blocks the
+  // user-facing action that triggered it).
   const addNotification = (title, body, role = "Both") => {
     const newNotif = {
       id: `notif-${Date.now()}`,
@@ -356,30 +353,51 @@ export default function App() {
       role
     };
 
-    const updated = [newNotif, ...notifications];
-    setNotifications(updated);
-    localStorage.setItem("pms_notifications", JSON.stringify(updated));
+    setNotifications(prev => [newNotif, ...prev]);
+    apiService.createNotification(newNotif).catch(err => console.error("Failed to save notification:", err));
 
     if (role === "Both" || role === activeRole) {
       showToast(title, body, role === "Admin" ? "info" : "success");
     }
   };
 
-  const clearNotifications = () => {
+  const clearNotifications = async () => {
     setNotifications([]);
-    localStorage.setItem("pms_notifications", JSON.stringify([]));
+    try {
+      await apiService.clearAllNotifications();
+    } catch (err) {
+      console.error("Failed to clear notifications on server:", err);
+    }
     showToast("Notifications Cleared", "System alerts folder cleared.", "success");
   };
 
-  const markNotificationsRead = () => {
-    const marked = notifications.map(n => ({ ...n, read: true }));
-    setNotifications(marked);
-    localStorage.setItem("pms_notifications", JSON.stringify(marked));
+  const markNotificationsRead = async () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    try {
+      await apiService.markAllNotificationsRead();
+    } catch (err) {
+      console.error("Failed to mark notifications read on server:", err);
+    }
   };
 
-  const updateBranding = (newBranding) => {
+  const updateBranding = async (newBranding) => {
     setBranding(newBranding);
-    localStorage.setItem("pms_branding", JSON.stringify(newBranding));
+    try {
+      await apiService.saveBranding(newBranding);
+    } catch (err) {
+      showToast("Error", err.message || "Failed to save branding settings.", "success");
+    }
+  };
+
+  // Clears both the cached user object AND the session token. Logging out
+  // without clearing the token used to silently log the user back in on next
+  // load (loadData's session-refresh would find the still-valid token and
+  // restore the session) - this is the only correct way to end a session.
+  const logout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem("pms_current_user");
+    clearAuthToken();
+    window.location.hash = "#home";
   };
 
   // ----------------------------------------------------
@@ -536,7 +554,8 @@ export default function App() {
         initWhatsAppThread,
         currentUser,
         setCurrentUser,
-        showToast
+        showToast,
+        logout
       },
       navigateTo: (h) => { window.location.hash = h; },
       addNotification,
@@ -554,6 +573,7 @@ export default function App() {
         setCurrentUser(user);
         setActiveRole(user.role);
         localStorage.setItem("pms_current_user", JSON.stringify(user));
+        if (!user.mustChangePassword) loadProtectedData(user);
         window.location.hash = "#home";
       }} />;
     }
@@ -563,6 +583,7 @@ export default function App() {
       return <ForceChangePasswordView key="force-change-password-view" state={navProps.state} user={currentUser} onPasswordChanged={(updatedUser) => {
         setCurrentUser(updatedUser);
         localStorage.setItem("pms_current_user", JSON.stringify(updatedUser));
+        loadProtectedData(updatedUser);
         window.location.hash = "#home";
       }} />;
     }
@@ -618,6 +639,13 @@ export default function App() {
           return null;
         }
         return <DepartmentManagementView {...navProps} />;
+      case '#settings/branding':
+        // Guard: Main Admin only - branding/API settings affect every user
+        if (currentUser.role !== 'Main Admin') {
+          window.location.hash = '#settings';
+          return null;
+        }
+        return <AutomationPanel {...navProps} />;
       case '#order-history':
         return <OrderHistoryView {...navProps} />;
       case '#rejected-orders':

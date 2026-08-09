@@ -1,16 +1,141 @@
-# React + Vite
+# Alagiri Procurement System
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A React (Vite) frontend backed by a real Express + SQLite API in [`/server`](server). There is no more mock/localStorage database - all requests, suppliers, users, logs, and departments are stored in a real database and served over HTTP with JWT-based authentication and bcrypt-hashed passwords.
 
-Currently, two official plugins are available:
+## Project layout
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```
+/                 React frontend (Vite)
+/server           Express + SQLite backend API
+/server/data      SQLite database file (gitignored, created on first run)
+```
 
-## React Compiler
+## Running locally
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+You need two things running: the backend API and the frontend dev server.
 
-## Expanding the Oxlint configuration
+**1. Configure the backend**
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+```bash
+cd server
+cp .env.example .env
+```
+
+Edit `server/.env` and set `JWT_SECRET` to a long random string, e.g.:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+```
+
+**2. Install dependencies (both projects)**
+
+```bash
+npm install                # frontend, from the repo root
+npm run server:install     # backend
+```
+
+**3. Run both together**
+
+```bash
+npm run dev:all
+```
+
+This starts the backend on `http://localhost:4000` and the frontend on `http://localhost:8002` (Vite proxies `/api/*` to the backend in dev, so the frontend never needs to know the backend's port directly). Open `http://localhost:8002`.
+
+Or run them separately in two terminals if you prefer:
+
+```bash
+npm run server:dev   # backend only, auto-restarts on change
+npm run dev          # frontend only
+```
+
+### First login
+
+The backend seeds two accounts the first time it runs against an empty database:
+
+| Username | Password | Role |
+|---|---|---|
+| `admin` | `Password123!` | Main Admin |
+| `employee` | `Password123!` | Employee |
+
+Change these immediately in a real deployment (Settings → User Management, or the account's own password screen). Every account created afterward through User Management gets a temporary password of the form `Alagiri<username>` and is forced to set a real password on first login.
+
+## Backend requirements
+
+The server uses Node's built-in `node:sqlite` module instead of a native-compiled SQLite driver, specifically so it needs **no C++/Visual Studio build toolchain** to install - it runs anywhere Node itself runs. This requires **Node.js 22.5 or newer**.
+
+## Deployment
+
+The backend needs a **persistent filesystem** to keep its SQLite database file across restarts/redeploys.
+
+- **Render, a VPS, Railway, Fly.io**: works well. Attach a persistent disk (Render calls this a "Disk") mounted so `server/data/` survives redeploys, or set `DB_PATH` to a path on that disk. Set `JWT_SECRET` and `CORS_ORIGIN` (your deployed frontend's URL) as environment variables.
+- **Vercel (serverless functions)**: does **not** work for the backend as-is. Vercel's functions run on an ephemeral, effectively read-only filesystem with no shared disk between invocations, so a SQLite file written in one request is not guaranteed to be there for the next. If you want the backend on Vercel, swap SQLite for a hosted database Vercel can reach over the network (Vercel Postgres, Neon, Turso, etc.) - ask if you want help with that migration.
+- **Vercel/Netlify for the frontend only**: works fine - it's a static Vite build. Point `VITE_API_BASE_URL` (build-time env var) at wherever the backend is actually running, e.g. a Render URL.
+
+### Frontend build
+
+```bash
+npm run build
+```
+
+Set `VITE_API_BASE_URL` before building if the backend isn't reachable at same-origin `/api` in production (e.g. frontend and backend deployed to different hosts):
+
+```bash
+VITE_API_BASE_URL=https://your-backend.example.com/api npm run build
+```
+
+This can also be overridden at runtime per-device without a rebuild via `localStorage.setItem('pms_api_base_url', 'https://...')` - useful for the Capacitor mobile build, where the API URL can't be baked in per install.
+
+## Notifications & branding
+
+Notifications and branding/webhook settings are server-side too now (Settings → Branding & API Settings, Main Admin only) - shared across every device, not per-browser. Notifications use a shared "team inbox" read state (marking read affects everyone who can see that notification, not just the device that dismissed it) rather than per-user read receipts.
+
+## Running on a phone (Android)
+
+The native Android project lives in [`/android`](android), generated by Capacitor. A signed/unsigned **debug APK already exists** at `android/app/build/outputs/apk/debug/app-debug.apk` after running `npm run android:apk` - install it on a phone and it talks to this developer machine's backend over WiFi (`http://10.13.100.96:4000/api`, baked in at build time - **update this IP** in the command below if your machine's LAN address is different; check with `ipconfig`).
+
+**One-time machine setup** (already done on this machine, listed here for a fresh machine):
+1. Install the Android SDK (Android Studio, or just the command-line tools) and note its path.
+2. Install a JDK Gradle can actually run under. **JDK 25 does not work with Gradle 8.14** ("Unsupported class file major version 69") - install JDK 21 instead, e.g. `winget install --id EclipseAdoptium.Temurin.21.JDK -e`.
+3. Create `android/local.properties` with `sdk.dir=<path to your Android SDK>`.
+4. Set `org.gradle.java.home=<path to JDK 21>` in `android/gradle.properties` (only needed if your default `java` isn't already 17-21).
+
+**Every time you want a fresh build for a phone on your WiFi:**
+
+```bash
+# 1. Start the backend so the phone has something to talk to
+npm run server:dev
+
+# 2. Build the web app pointed at your machine's LAN IP, sync into the native
+#    project, and build the APK (replace the IP with your own - `ipconfig` / `ifconfig`)
+VITE_API_BASE_URL="http://10.13.100.96:4000/api" npm run android:sync
+cd android && ./gradlew assembleDebug --console=plain
+```
+
+The APK lands at `android/app/build/outputs/apk/debug/app-debug.apk`. Copy it to the phone (USB, cloud drive, `adb install app-debug.apk`) and install it - Android will prompt to allow installing from this source the first time.
+
+**Requirements for the phone to actually reach the backend:**
+- Phone and PC must be on the **same WiFi network**.
+- Windows Firewall must allow inbound connections to Node on that network (a "Node.js JavaScript Runtime" inbound rule already exists on this machine; if requests silently fail from the phone, check Windows Defender Firewall → Allowed apps).
+- The backend binds to all interfaces by default, so `server/.env`'s `CORS_ORIGIN` needs to include the app's own origin, not just your browser's - already set to `http://localhost:8002,https://localhost,capacitor://localhost` for this reason (`https://localhost` is the origin Capacitor's Android WebView uses for local app content).
+- This LAN setup is for **development/testing only**. Android blocks plain HTTP to arbitrary hosts by default; `android/app/src/main/res/xml/network_security_config.xml` narrowly allows cleartext to `10.13.100.96` (and `10.0.2.2`, the Android emulator's alias for the host machine) for exactly this reason. For a real release, deploy the backend with HTTPS (see Deployment above) and rebuild with `VITE_API_BASE_URL` pointed at that URL - the network security exception is then unnecessary (safe to leave, or remove).
+
+**iOS**: not possible from this machine - building an iOS app requires Xcode, which only runs on macOS. Once you have access to a Mac (or a cloud Mac CI like Codemagic / GitHub Actions macOS runners), run `npx cap add ios` and follow the same pattern.
+
+### Release (signed) build
+
+`npm run android:apk` builds a **debug** APK - fine for installing on your own phone, but not for distributing to anyone else or publishing. A release build is already configured and working:
+
+```bash
+VITE_API_BASE_URL="https://your-real-backend.example.com/api" npm run android:sync
+cd android && ./gradlew assembleRelease --console=plain
+```
+
+Output: `android/app/build/outputs/apk/release/app-release.apk`.
+
+**A release keystore already exists** at `android/keystore/alagiri-release.jks`, credentials in `android/keystore.properties` (both gitignored - `git check-ignore` confirms neither is tracked). `app/build.gradle` reads that file automatically; without it, `assembleRelease` fails cleanly instead of producing an unsigned/wrongly-signed APK.
+
+**Read this before you do anything else with the keystore:**
+- **Back up `android/keystore/alagiri-release.jks` and `android/keystore.properties` somewhere safe outside this machine** - a password manager, encrypted cloud storage, wherever you keep other credentials that must never be lost.
+- If you ever lose this keystore, **you cannot publish an update to this app again under the same identity.** Play Store (and every phone that already installed a version signed with this key) permanently rejects anything signed with a different key. There is no recovery - you'd have to ship as a brand-new, separate app listing.
+- Don't regenerate it "just to get a fresh one" once you've distributed even one release build - that's exactly the situation that breaks future updates.

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Allows plain HTTP (cleartext) only to this specific dev-machine LAN address,
+  so the app can reach `npm run dev:all` running on a developer's PC while
+  testing on a physical phone over WiFi. Everything else on the internet still
+  requires HTTPS (the default-config base-config below has cleartextTrafficPermitted
+  left at its secure default). Once the backend is deployed with a real HTTPS
+  URL, rebuild pointing VITE_API_BASE_URL at that URL and this domain-config
+  entry is no longer needed for day-to-day use (safe to leave in place, it
+  just narrowly allows this one dev IP).
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.13.100.96</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

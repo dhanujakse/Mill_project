@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { apiService, hashPassword } from '../services/api';
+import { apiService } from '../services/api';
 import { CONFIG } from '../config';
 
 // ----------------------------------------------------
@@ -750,7 +750,11 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       }
     }
 
-    const reqId = `REQ-${1000 + state.requests.length + 1}`;
+    // Timestamp-based id: with a real shared backend, multiple people can create
+    // requests concurrently, so an id derived from the current in-memory list
+    // length could collide (two employees submitting at once, or an id being
+    // reused after older requests are no longer loaded client-side).
+    const reqId = `REQ-${Date.now()}`;
 
     const newReq = {
       id: reqId,
@@ -1447,7 +1451,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
         description: cardData.description,
         billTo: cardData.billTo,
         supplierId: cardData.supplierId,
-        poNumber: `PO-${new Date().getFullYear()}-${100 + state.requests.length}`,
+        poNumber: `PO-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
         poDate: new Date().toISOString(),
         status: "No Response",
         history: updatedHistory
@@ -2287,7 +2291,46 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
   const [proofFile, setProofFile] = useState(null);
   const [proofFileName, setProofFileName] = useState("");
 
-  if (!req) return <p style={{ padding: '20px' }}>Order not found</p>;
+  // Hooks must run unconditionally on every render (Rules of Hooks). Declaring
+  // this useEffect after the early "not found" / "Pending" returns below caused
+  // React to see a different number of hooks between renders whenever a Pending
+  // order was opened, crashing the whole app to a blank screen. It now lives
+  // above those early returns and guards its own logic internally instead.
+  const hasEditPermission = !!req && (state.currentUser.role === 'Main Admin' || (state.currentUser.role === 'Sub Admin' && state.currentUser.permissions?.edit_orders));
+
+  useEffect(() => {
+    if (!req || req.status === "Pending") return;
+    if (hasEditPermission && (!req.expectedDispatchDate || req.expectedDispatchDate === "")) {
+      const timer = setTimeout(() => {
+        handleEditDispatchDate();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [req?.id, req?.status, req?.expectedDispatchDate, hasEditPermission]);
+
+  if (!req) {
+    return (
+      <div style={{ padding: '20px' }}>
+        <header className="app-header">
+          <div className="header-left">
+            <button className="back-btn" onClick={() => navigateTo('#live-orders')} style={{ cursor: 'pointer' }}>
+              <Icons.Back />
+            </button>
+            <h1 style={{ fontSize: '18px' }}>Order details</h1>
+          </div>
+        </header>
+        <div style={{ padding: '40px 20px', textAlign: 'center', background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '16px', boxShadow: 'var(--shadow-sm)', marginTop: '10px' }}>
+          <Icons.Warning />
+          <p style={{ fontWeight: 800, margin: '14px 0 6px 0', fontSize: '16px', color: 'var(--text-main)' }}>Request "{requestId}" Not Found</p>
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '18px' }}>The requested order could not be found or has been removed.</p>
+          <button className="btn-orange" onClick={() => navigateTo('#live-orders')} style={{ width: 'auto', padding: '10px 20px', fontSize: '12px', cursor: 'pointer' }}>
+            Back to Orders
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (req.status === "Pending") {
     setTimeout(() => {
@@ -2299,8 +2342,6 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
   const supplier = state.suppliers.find(s => s.id === req.supplierId) || { companyName: "Not Assigned" };
   const dateStr = new Date(req.date).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
   const timeStr = new Date(req.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-
-  const hasEditPermission = state.currentUser.role === 'Main Admin' || (state.currentUser.role === 'Sub Admin' && state.currentUser.permissions?.edit_orders);
 
   const handleProofCamera = async (e) => {
     const file = e.target.files[0];
@@ -2804,16 +2845,6 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
     );
     openModal();
   };
-
-  // Requirement 5: Prompt for Expected Dispatch Date if missing when Admin opens order
-  useEffect(() => {
-    if (hasEditPermission && (!req.expectedDispatchDate || req.expectedDispatchDate === "")) {
-      const timer = setTimeout(() => {
-        handleEditDispatchDate();
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [req.id, req.expectedDispatchDate]);
 
   return (
     <div>
@@ -3455,6 +3486,16 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
             </div>
           )}
 
+          {isMainAdmin && (
+            <div className="settings-item" onClick={() => navigateTo('#settings/branding')} style={{ cursor: 'pointer' }}>
+              <div className="settings-item-left">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ color: 'var(--primary-orange)' }}><circle cx="13.5" cy="6.5" r=".5" /><circle cx="17.5" cy="10.5" r=".5" /><circle cx="8.5" cy="7.5" r=".5" /><circle cx="6.5" cy="12.5" r=".5" /><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2Z" /></svg>
+                <span className="settings-title">Branding & API Settings</span>
+              </div>
+              <Icons.ChevronRight />
+            </div>
+          )}
+
           {user.role !== "Employee" && (
             <div className="settings-item" onClick={() => navigateTo('#settings/notifications')} style={{ cursor: 'pointer' }}>
               <div className="settings-item-left">
@@ -3483,11 +3524,7 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
             <Icons.ChevronRight />
           </div>
 
-          <div className="settings-item" style={{ color: 'var(--status-red)', cursor: 'pointer' }} onClick={() => {
-            state.setCurrentUser(null);
-            localStorage.removeItem("pms_current_user");
-            navigateTo('#home');
-          }}>
+          <div className="settings-item" style={{ color: 'var(--status-red)', cursor: 'pointer' }} onClick={state.logout}>
             <div className="settings-item-left">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ color: 'var(--status-red)' }}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
               <span className="settings-title" style={{ fontWeight: '700' }}>Log out</span>
@@ -4636,8 +4673,10 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
           permissions: role === "Sub Admin" ? permissions : {}
         };
         if (cleanPassword) {
-          const newHash = await apiService.hashPassword(cleanPassword);
-          updated.passwordHash = newHash;
+          // Send the plaintext password to the server over the authenticated
+          // request - it hashes with bcrypt there. The client never computes
+          // or stores password hashes itself.
+          updated.newPassword = cleanPassword;
           updated.mustChangePassword = true;
         }
         await apiService.saveUser(updated);
@@ -5215,7 +5254,7 @@ export function AutomationPanel({ state, navigateTo }) {
 
     state.updateBranding(updated);
     localStorage.setItem("pms_api_base_url", apiBaseUrl);
-    state.logEvent("Updated Branding & Webhook Settings", "Custom config", appName, `Branding updated: ${appName}. Webhook URL: ${apiBaseUrl}`);
+    state.logEvent("Updated Branding & API Settings", "Custom config", appName, `Branding updated: ${appName}. Backend API URL override: ${apiBaseUrl || '(none - using build default)'}`);
     state.showToast("Success", "Branding settings saved successfully.", "success");
     navigateTo('#settings');
   };
@@ -5257,10 +5296,10 @@ export function AutomationPanel({ state, navigateTo }) {
         </div>
 
         <div className="form-group" style={{ marginTop: '16px' }}>
-          <label>Connect Live API Base URL</label>
-          <input type="text" className="form-control" placeholder="https://api.alagiri.com/v1" value={apiBaseUrl} onChange={e => setApiBaseUrl(e.target.value)} />
+          <label>Backend API URL (this device only)</label>
+          <input type="text" className="form-control" placeholder="https://your-backend.example.com/api" value={apiBaseUrl} onChange={e => setApiBaseUrl(e.target.value)} />
           <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: '1.3' }}>
-            *Input your backend base API endpoint (e.g., Node.js / Python REST API). Leave empty to use simulated LocalStorage.
+            *Include the /api suffix. Leave empty to use the URL baked in at build time (VITE_API_BASE_URL, or same-origin /api). Useful for pointing an already-installed mobile app at a different backend without rebuilding.
           </p>
         </div>
 
@@ -5269,7 +5308,7 @@ export function AutomationPanel({ state, navigateTo }) {
         </button>
 
         <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px', fontSize: '12px', lineHeight: '1.4', marginTop: '12px', textAlign: 'left' }}>
-          <b>💡 System Note:</b> Setting a target API URL switches requests from simulated state storage to live endpoints.
+          <b>💡 System Note:</b> This app always talks to the real backend - there is no offline/simulated mode. This setting only overrides which backend URL this device uses.
         </div>
       </div>
     </div>
