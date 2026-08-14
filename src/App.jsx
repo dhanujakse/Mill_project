@@ -43,6 +43,7 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [webhookUrl, setWebhookUrl] = useState("");
   const [toasts, setToasts] = useState([]);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   // User Session state. A cached user object is only trusted if a session
   // token is also present - without one the backend will reject every
@@ -81,22 +82,23 @@ export default function App() {
   // right after a fresh login or a forced password change - the mount effect
   // only fires once, but a brand-new session needs this data too.
   const loadProtectedData = async (user) => {
-    // Mirrors the server-side guard on GET /logs (Main Admin, or Sub Admin
-    // with the view_logs permission) - only those roles can see the full
-    // audit trail, everyone else gets [] instead of a 403.
-    const canViewLogs = user.role === 'Main Admin' || (user.role === 'Sub Admin' && !!user.permissions?.view_logs);
+    try {
+      // Mirrors the server-side guard on GET /logs (Main Admin, or Sub Admin
+      // with the view_logs permission) - only those roles can see the full
+      // audit trail, everyone else gets [] instead of a 403.
+      const canViewLogs = user.role === 'Main Admin' || (user.role === 'Sub Admin' && !!user.permissions?.view_logs);
 
-    const reqs = await apiService.getRequests();
-    const sups = await apiService.getSuppliers();
-    const auditLogs = canViewLogs ? await apiService.getLogs() : [];
-    const notifs = await apiService.getNotifications();
-    const whUrl = await apiService.getWebhookUrl();
+      const reqs = await apiService.getRequests();
+      const sups = await apiService.getSuppliers();
+      const auditLogs = canViewLogs ? await apiService.getLogs() : [];
+      const notifs = await apiService.getNotifications();
+      const whUrl = await apiService.getWebhookUrl();
 
-    setRequests(reqs);
-    setSuppliers(sups);
-    setLogs(auditLogs);
-    setNotifications(notifs);
-    setWebhookUrl(whUrl);
+      setRequests(reqs);
+      setSuppliers(sups);
+      setLogs(auditLogs);
+      setNotifications(notifs);
+      setWebhookUrl(whUrl);
 
     // Run automatic delay check using expectedDispatchDate (Requirement 7 & 8)
     let delayModified = false;
@@ -221,6 +223,10 @@ export default function App() {
       }
       const freshNotifs = await apiService.getNotifications();
       setNotifications(freshNotifs);
+    } } catch (err) {
+      console.error("Failed to load protected data:", err);
+    } finally {
+      setInitialLoading(false);
     }
   };
 
@@ -540,6 +546,7 @@ export default function App() {
         setRequests,
         suppliers,
         setSuppliers,
+        initialLoading,
         logs,
         setLogs,
         branding,

@@ -12,6 +12,7 @@
     "node": ">=22.5.0"
   },
   "dependencies": {
+    "alagiri_client": "file:..",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

@@ -385,6 +385,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
   const [suggestedSupplierPhone, setSuggestedSupplierPhone] = useState("");
   const [suggestedSupplierEmail, setSuggestedSupplierEmail] = useState("");
   const [suggestedSupplierRemarks, setSuggestedSupplierRemarks] = useState("");
+  const [isManualSupplier, setIsManualSupplier] = useState(false);
   const [billTo, setBillTo] = useState(state.branding.billingLocations[0] || "");
   const [description, setDescription] = useState("");
   const [listening, setListening] = useState(false);
@@ -408,6 +409,9 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
         setSuggestedSupplierPhone(clonedReq.suggestedSupplierPhone || "");
         setSuggestedSupplierEmail(clonedReq.suggestedSupplierEmail || "");
         setSuggestedSupplierRemarks(clonedReq.suggestedSupplierRemarks || "");
+        if (clonedReq.suggestedSupplier && !state.suppliers.some(s => s.companyName.toLowerCase() === clonedReq.suggestedSupplier.toLowerCase())) {
+          setIsManualSupplier(true);
+        }
         setBillTo(clonedReq.billTo || (state.branding.billingLocations[0] || ""));
         setDescription(clonedReq.description || "");
         setDueDate(clonedReq.dueDate || "");
@@ -416,7 +420,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
         setAttachedFileName(clonedReq.imageName || "");
       }
     }
-  }, [cloneId, state.requests]);
+  }, [cloneId, state.requests, state.suppliers]);
 
   const validateField = (field, value) => {
     let err = "";
@@ -435,22 +439,21 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       if (!value) {
         err = "Units is required.";
       }
-    } else if (field === "suggestedSupplierEmail") {
-      if (value.trim()) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(value.trim())) {
-          err = "Invalid email format.";
-        }
+    } else if (field === "suggestedSupplier") {
+      if (isManualSupplier && !value.trim()) {
+        err = "Supplier Name is required.";
       }
     } else if (field === "suggestedSupplierPhone") {
-      if (value.trim()) {
+      if (isManualSupplier && !value.trim()) {
+        err = "Supplier Mobile Number is required.";
+      } else if (value.trim()) {
         let stripped = value.trim();
         if (stripped.startsWith("+91")) {
           stripped = stripped.substring(3);
         } else if (stripped.startsWith("+")) {
           stripped = stripped.substring(1);
         }
-        if (!/^\d+$/.test(stripped)) {
+        if (!/^\d+$/.test(stripped.replace(/[\s-]/g, ''))) {
           err = "Phone number must contain numbers only.";
         }
       }
@@ -646,23 +649,28 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
     else if (isNaN(quantity) || quantity <= 0) newErrors.qty = "Quantity must be a positive number.";
     if (!units) newErrors.units = "Units is required.";
 
-    if (isEmployee) {
-      if (suggestedSupplierEmail.trim()) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(suggestedSupplierEmail.trim())) {
-          newErrors.suggestedSupplierEmail = "Invalid email format.";
+    const isManualOrCustom = isManualSupplier || (suggestedSupplier.trim() && !state.suppliers.some(s => s.companyName.toLowerCase() === suggestedSupplier.trim().toLowerCase()));
+
+    if (isManualOrCustom) {
+      if (!suggestedSupplier.trim()) {
+        newErrors.suggestedSupplier = "Supplier Name is required.";
+      }
+      if (!suggestedSupplierPhone.trim()) {
+        newErrors.suggestedSupplierPhone = "Supplier Mobile Number is required.";
+      } else {
+        let stripped = suggestedSupplierPhone.trim();
+        if (stripped.startsWith("+91")) stripped = stripped.substring(3);
+        else if (stripped.startsWith("+")) stripped = stripped.substring(1);
+        if (!/^\d+$/.test(stripped.replace(/[\s-]/g, ''))) {
+          newErrors.suggestedSupplierPhone = "Supplier mobile number must contain digits only.";
         }
       }
-      if (suggestedSupplierPhone.trim()) {
-        let stripped = suggestedSupplierPhone.trim();
-        if (stripped.startsWith("+91")) {
-          stripped = stripped.substring(3);
-        } else if (stripped.startsWith("+")) {
-          stripped = stripped.substring(1);
-        }
-        if (!/^\d+$/.test(stripped)) {
-          newErrors.suggestedSupplierPhone = "Phone number must contain numbers only.";
-        }
+    } else if (suggestedSupplierPhone.trim()) {
+      let stripped = suggestedSupplierPhone.trim();
+      if (stripped.startsWith("+91")) stripped = stripped.substring(3);
+      else if (stripped.startsWith("+")) stripped = stripped.substring(1);
+      if (!/^\d+$/.test(stripped.replace(/[\s-]/g, ''))) {
+        newErrors.suggestedSupplierPhone = "Phone number must contain numbers only.";
       }
     }
 
@@ -725,9 +733,9 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
           dueDate: dueDate || original.dueDate,
           suggestedSupplier: suggestedSupplier || "",
           description,
-          suggestedSupplierPhone: isEmployee ? suggestedSupplierPhone : original.suggestedSupplierPhone,
-          suggestedSupplierEmail: isEmployee ? suggestedSupplierEmail : original.suggestedSupplierEmail,
-          suggestedSupplierRemarks: isEmployee ? suggestedSupplierRemarks : original.suggestedSupplierRemarks,
+          suggestedSupplierPhone: suggestedSupplierPhone || "",
+          suggestedSupplierEmail: suggestedSupplierEmail || "",
+          suggestedSupplierRemarks: suggestedSupplierRemarks || "",
           image: attachedFile || original.image,
           imageName: attachedFileName || original.imageName,
           history: [...(original.history || []), ...editHistoryEntries]
@@ -767,9 +775,9 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       qty: quantity,
       units,
       suggestedSupplier: suggestedSupplier || "",
-      suggestedSupplierPhone: isEmployee ? suggestedSupplierPhone : "",
-      suggestedSupplierEmail: isEmployee ? suggestedSupplierEmail : "",
-      suggestedSupplierRemarks: isEmployee ? suggestedSupplierRemarks : "",
+      suggestedSupplierPhone: suggestedSupplierPhone || "",
+      suggestedSupplierEmail: suggestedSupplierEmail || "",
+      suggestedSupplierRemarks: suggestedSupplierRemarks || "",
       billTo,
       description,
       status: "Pending",
@@ -890,57 +898,96 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
           </div>
         </div>
 
-        {isEmployee ? (
-          <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--border-radius-md)', padding: '12px', marginBottom: '16px', background: 'var(--card-bg)', textAlign: 'left' }}>
-            <h4 style={{ fontSize: '12px', fontWeight: '800', marginBottom: '10px', textTransform: 'uppercase', color: 'var(--primary-orange)', letterSpacing: '0.5px' }}>Suggest Supplier (Optional)</h4>
+        <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--border-radius-md)', padding: '16px', marginBottom: '16px', background: 'var(--card-bg)', textAlign: 'left' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h4 style={{ fontSize: '12px', fontWeight: '800', margin: 0, textTransform: 'uppercase', color: 'var(--primary-orange)', letterSpacing: '0.5px' }}>
+              Suggest Supplier (Optional)
+            </h4>
+            {isManualSupplier && (
+              <button 
+                type="button" 
+                onClick={() => {
+                  setIsManualSupplier(false);
+                  setSuggestedSupplier("");
+                  setSuggestedSupplierPhone("");
+                }}
+                style={{ 
+                  background: 'none', 
+                  border: 'none', 
+                  color: 'var(--primary-orange)', 
+                  fontSize: '12px', 
+                  fontWeight: '700', 
+                  cursor: 'pointer',
+                  textDecoration: 'underline'
+                }}
+              >
+                Select from list
+              </button>
+            )}
+          </div>
+
+          {!isManualSupplier ? (
             <div className="form-group">
-              <label>Supplier Name</label>
+              <label>Choose Supplier</label>
               <select className="form-control" value={suggestedSupplier} onChange={e => {
                 const name = e.target.value;
-                setSuggestedSupplier(name);
-                const s = state.suppliers.find(sup => sup.companyName === name);
-                if (s) {
-                  setSuggestedSupplierPhone(s.whatsappNumber || s.phoneNumber || "");
-                  setSuggestedSupplierEmail(s.email || "");
-                } else {
+                if (name === "__MANUAL__") {
+                  setIsManualSupplier(true);
+                  setSuggestedSupplier("");
                   setSuggestedSupplierPhone("");
-                  setSuggestedSupplierEmail("");
+                } else {
+                  setSuggestedSupplier(name);
+                  const s = state.suppliers.find(sup => sup.companyName === name);
+                  if (s) {
+                    setSuggestedSupplierPhone(s.whatsappNumber || s.phoneNumber || "");
+                  } else {
+                    setSuggestedSupplierPhone("");
+                  }
                 }
               }} style={{ cursor: 'pointer' }}>
-                <option value="">-- Choose Supplier (Optional) --</option>
+                <option value="">Choose Supplier (Optional)</option>
                 {state.suppliers.map(sup => (
                   <option key={sup.id} value={sup.companyName}>{sup.companyName}</option>
                 ))}
+                <option value="__MANUAL__">+ Add Supplier Manually</option>
               </select>
             </div>
-            <div className="form-row">
+          ) : (
+            <>
               <div className="form-group">
-                <label>Phone</label>
-                <input type="text" className="form-control" placeholder="e.g. +91 9988776655" value={suggestedSupplierPhone} onChange={e => { setSuggestedSupplierPhone(e.target.value); validateField("suggestedSupplierPhone", e.target.value); }} style={{ border: errors.suggestedSupplierPhone ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)', cursor: 'text' }} />
+                <label>Supplier Name <span style={{ color: 'var(--status-red)' }}>*</span></label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  placeholder="Enter supplier name" 
+                  value={suggestedSupplier} 
+                  onChange={e => { 
+                    setSuggestedSupplier(e.target.value); 
+                    validateField("suggestedSupplier", e.target.value); 
+                  }} 
+                  style={{ border: errors.suggestedSupplier ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)', cursor: 'text' }} 
+                />
+                {errors.suggestedSupplier && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px', textAlign: 'left' }}>{errors.suggestedSupplier}</div>}
+              </div>
+
+              <div className="form-group" style={{ marginTop: '12px' }}>
+                <label>Supplier Mobile Number <span style={{ color: 'var(--status-red)' }}>*</span></label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  placeholder="Enter mobile number" 
+                  value={suggestedSupplierPhone} 
+                  onChange={e => { 
+                    setSuggestedSupplierPhone(e.target.value); 
+                    validateField("suggestedSupplierPhone", e.target.value); 
+                  }} 
+                  style={{ border: errors.suggestedSupplierPhone ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)', cursor: 'text' }} 
+                />
                 {errors.suggestedSupplierPhone && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px', textAlign: 'left' }}>{errors.suggestedSupplierPhone}</div>}
               </div>
-              <div className="form-group">
-                <label>Email</label>
-                <input type="email" className="form-control" placeholder="e.g. sales@abco.com" value={suggestedSupplierEmail} onChange={e => { setSuggestedSupplierEmail(e.target.value); validateField("suggestedSupplierEmail", e.target.value); }} style={{ border: errors.suggestedSupplierEmail ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)', cursor: 'text' }} />
-                {errors.suggestedSupplierEmail && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px', textAlign: 'left' }}>{errors.suggestedSupplierEmail}</div>}
-              </div>
-            </div>
-            <div className="form-group" style={{ marginBottom: 0, marginTop: '8px' }}>
-              <label>Remarks</label>
-              <input type="text" className="form-control" placeholder="e.g. Recommended for pulper parts" value={suggestedSupplierRemarks} onChange={e => setSuggestedSupplierRemarks(e.target.value)} />
-            </div>
-          </div>
-        ) : (
-          <div className="form-group">
-            <label>Suggest supplier</label>
-            <select className="form-control" value={suggestedSupplier} onChange={e => setSuggestedSupplier(e.target.value)} style={{ cursor: 'pointer' }}>
-              <option value="">-- Choose Supplier (Optional) --</option>
-              {state.suppliers.map(sup => (
-                <option key={sup.id} value={sup.companyName}>{sup.companyName}</option>
-              ))}
-            </select>
-          </div>
-        )}
+            </>
+          )}
+        </div>
 
         <div className="form-group">
           <label>Bill to</label>
@@ -1383,15 +1430,39 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
 
   const handleApprove = async (id) => {
     try {
-      const cardData = formData[id];
-      if (!cardData || !cardData.productName || !cardData.qty || !cardData.supplierId || !cardData.billTo) {
-        state.showToast("Validation Error", "Please ensure product name, quantity, supplier, and billing location are filled.", "success");
+      let cardData = { ...(formData[id] || {}) };
+      const req = state.requests.find(r => r.id && String(r.id).trim() === String(id).trim());
+      if (!req) {
+        state.showToast("Not Found", "Request not found in database.", "success");
         return;
       }
 
-      const req = state.requests.find(r => r.id === id);
-      if (!req) {
-        state.showToast("Not Found", "Request not found in database.", "success");
+      // Auto-register manual supplier if supplierId is empty but suggested supplier is provided
+      let finalSupplierId = cardData.supplierId;
+      if (!finalSupplierId && req.suggestedSupplier) {
+        const existingSup = state.suppliers.find(s => s.companyName.toLowerCase() === req.suggestedSupplier.toLowerCase());
+        if (existingSup) {
+          finalSupplierId = existingSup.id;
+        } else {
+          const newSup = await apiService.addSupplier({
+            id: `sup-${Date.now()}`,
+            companyName: req.suggestedSupplier,
+            contactPerson: req.suggestedSupplier,
+            whatsappNumber: req.suggestedSupplierPhone || "",
+            phoneNumber: req.suggestedSupplierPhone || "",
+            email: req.suggestedSupplierEmail || "",
+            products: req.productName || "",
+            rating: 5,
+            remarks: req.suggestedSupplierRemarks || "Added from manual supplier request"
+          });
+          state.setSuppliers([...state.suppliers, newSup]);
+          finalSupplierId = newSup.id;
+        }
+        cardData.supplierId = finalSupplierId;
+      }
+
+      if (!cardData || !cardData.productName || !cardData.qty || !cardData.supplierId || !cardData.billTo) {
+        state.showToast("Validation Error", "Please ensure product name, quantity, supplier, and billing location are filled.", "success");
         return;
       }
 
@@ -1531,7 +1602,23 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
     openModal();
   };
 
-  const selectedReq = selectedRequestId ? state.requests.find(r => r.id === selectedRequestId) : null;
+  const selectedReq = selectedRequestId 
+    ? state.requests.find(r => r.id && String(r.id).trim() === String(selectedRequestId).trim()) 
+    : null;
+
+  useEffect(() => {
+    if (selectedReq && selectedReq.status !== "Pending") {
+      navigateTo(`#order-details?id=${selectedReq.id}`);
+    }
+  }, [selectedReq, navigateTo]);
+
+  if (state.initialLoading) {
+    return (
+      <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+        <p style={{ fontWeight: 600 }}>Loading requested orders...</p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -1761,8 +1848,10 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                 <div className="form-group">
                   <label>Active Supplier</label>
                   <button type="button" className="form-control" style={{ textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: 'var(--card-bg)' }} onClick={() => openSupplierPicker(req.id)}>
-                    <span style={{ color: current.supplierId ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: current.supplierId ? '700' : 'normal' }}>
-                      {current.supplierId ? state.suppliers.find(s => s.id === current.supplierId)?.companyName : "-- Choose Supplier --"}
+                    <span style={{ color: (current.supplierId || req.suggestedSupplier) ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: (current.supplierId || req.suggestedSupplier) ? '700' : 'normal' }}>
+                      {current.supplierId 
+                        ? (state.suppliers.find(s => s.id === current.supplierId)?.companyName || req.suggestedSupplier || "Choose Supplier") 
+                        : (req.suggestedSupplier ? `Suggested: ${req.suggestedSupplier}` : "Choose Supplier")}
                     </span>
                     <Icons.ChevronRight />
                   </button>
@@ -1785,10 +1874,12 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
 // 4. PO PREVIEW VIEW COMPONENT
 // ----------------------------------------------------
 export function PoPreviewView({ state, navigateTo, requestId, addNotification }) {
-  const req = state.requests.find(r => r.id === requestId);
+  const req = state.requests.find(r => r.id && String(r.id).trim() === String(requestId).trim());
+  if (state.initialLoading) return <p style={{ padding: '20px' }}>Loading PO details...</p>;
   if (!req) return <p style={{ padding: '20px' }}>Order not found</p>;
 
   const supplier = state.suppliers.find(s => s.id === req.supplierId) || {};
+  const supplierPhone = supplier.whatsappNumber || supplier.phoneNumber || req.suggestedSupplierPhone || "";
   const branding = state.branding;
 
   const formattedMsg = `*PROCUREMENT ORDER: ${req.poNumber}*
@@ -1803,7 +1894,7 @@ Delivery Location: *${req.billTo}*
 *Instructions:* Please acknowledge receipt of this PO. Upload LR Copy once shipment is sent.`;
 
   const handleShareWhatsApp = async () => {
-    const url = `https://api.whatsapp.com/send?phone=${supplier.whatsappNumber || ""}&text=${encodeURIComponent(formattedMsg)}`;
+    const url = `https://api.whatsapp.com/send?phone=${supplierPhone}&text=${encodeURIComponent(formattedMsg)}`;
     
     // Set status to No Response (Order Placed)
     const updatedHistory = [...req.history, {
@@ -2285,7 +2376,7 @@ export function LiveOrdersView({ state, navigateTo }) {
 }
 
 export function OrderDetailsView({ state, navigateTo, requestId, addNotification, openModal, closeModal, setModalContent }) {
-  const req = state.requests.find(r => r.id === requestId);
+  const req = state.requests.find(r => r.id && String(r.id).trim() === String(requestId).trim());
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedFileName, setSelectedFileName] = useState("");
   const [proofFile, setProofFile] = useState(null);
@@ -2308,6 +2399,24 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [req?.id, req?.status, req?.expectedDispatchDate, hasEditPermission]);
+
+  if (state.initialLoading) {
+    return (
+      <div style={{ padding: '20px' }}>
+        <header className="app-header">
+          <div className="header-left">
+            <button className="back-btn" onClick={() => navigateTo('#live-orders')} style={{ cursor: 'pointer' }}>
+              <Icons.Back />
+            </button>
+            <h1 style={{ fontSize: '18px' }}>Order details</h1>
+          </div>
+        </header>
+        <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+          <p style={{ fontWeight: 600 }}>Loading order details...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!req) {
     return (
@@ -2936,6 +3045,51 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
             </div>
           );
         })()}
+
+        {/* Purchase Order (PO) Details & Quick Access */}
+        {(req.poNumber || req.supplierId || req.status !== "Pending") && (
+          <div style={{
+            background: 'var(--card-bg)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '16px',
+            padding: '16px 20px',
+            marginBottom: '20px',
+            boxShadow: 'var(--shadow-sm)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '700' }}>
+                PO Number: <b style={{ color: 'var(--primary-orange)' }}>{req.poNumber || "Generated PO"}</b>
+              </div>
+              <div style={{ fontSize: '13px', color: 'var(--text-main)', fontWeight: '700', marginTop: '2px' }}>
+                Supplier: {supplier.companyName || req.suggestedSupplier || "Assigned Supplier"}
+              </div>
+            </div>
+            <button
+              onClick={() => navigateTo(`#po-preview?id=${req.id}`)}
+              style={{
+                backgroundColor: 'var(--primary-orange)',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '8px 16px',
+                fontSize: '12px',
+                fontWeight: '800',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: 'var(--shadow-sm)'
+              }}
+            >
+              📄 View Purchase Order (PO)
+            </button>
+          </div>
+        )}
 
         {/* Requirement 2: Visual hierarchy for stage indicator - Active status clearly highlighted, others slightly dimmed */}
         <div className="timeline-container" style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '20px', marginBottom: '20px', boxShadow: 'var(--shadow-sm)' }}>
