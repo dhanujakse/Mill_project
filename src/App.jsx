@@ -268,7 +268,11 @@ export default function App() {
         try {
           const remoteBranding = await apiService.getBranding();
           const looksCorrupted = remoteBranding?.appName?.includes("Tamizhan") || remoteBranding?.companyName?.includes("Tamizhan");
-          setBranding(looksCorrupted || !remoteBranding?.appName ? CONFIG.branding : remoteBranding);
+          setBranding(looksCorrupted || !remoteBranding?.appName ? CONFIG.branding : {
+            ...CONFIG.branding,
+            ...remoteBranding,
+            billingLocations: remoteBranding.billingLocations?.length ? remoteBranding.billingLocations : CONFIG.branding.billingLocations
+          });
         } catch (err) {
           setBranding(CONFIG.branding);
         }

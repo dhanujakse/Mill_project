@@ -25,7 +25,8 @@ export const Icons = {
   Power: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 12} height={p?.size || p?.height || 12} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>,
   Check: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 12} height={p?.size || p?.height || 12} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="20 6 9 17 4 12"/></svg>,
   Camera: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 16} height={p?.size || p?.height || 16} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>,
-  Upload: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 16} height={p?.size || p?.height || 16} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+  Upload: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 16} height={p?.size || p?.height || 16} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
+  Search: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 18} height={p?.size || p?.height || 18} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
 };
 
 // Helper format date
@@ -386,7 +387,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
   const [suggestedSupplierEmail, setSuggestedSupplierEmail] = useState("");
   const [suggestedSupplierRemarks, setSuggestedSupplierRemarks] = useState("");
   const [isManualSupplier, setIsManualSupplier] = useState(false);
-  const [billTo, setBillTo] = useState(state.branding.billingLocations[0] || "");
+  const [billTo, setBillTo] = useState((state.branding.billingLocations && state.branding.billingLocations[0]) || "");
   const [description, setDescription] = useState("");
   const [listening, setListening] = useState(false);
   const [errors, setErrors] = useState({});
@@ -412,7 +413,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
         if (clonedReq.suggestedSupplier && !state.suppliers.some(s => s.companyName.toLowerCase() === clonedReq.suggestedSupplier.toLowerCase())) {
           setIsManualSupplier(true);
         }
-        setBillTo(clonedReq.billTo || (state.branding.billingLocations[0] || ""));
+        setBillTo(clonedReq.billTo || (state.branding.billingLocations && state.branding.billingLocations[0]) || "");
         setDescription(clonedReq.description || "");
         setDueDate(clonedReq.dueDate || "");
         setPriority(clonedReq.priority || "Normal");
@@ -617,7 +618,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
             className="btn-orange" 
             onClick={() => {
               if (newLoc.trim()) {
-                const updatedLocations = [...state.branding.billingLocations, newLoc.trim()];
+                const updatedLocations = [...(state.branding.billingLocations || []), newLoc.trim()];
                 state.updateBranding({
                   ...state.branding,
                   billingLocations: updatedLocations
@@ -992,7 +993,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
         <div className="form-group">
           <label>Bill to</label>
           <select className="form-control" value={billTo} onChange={e => handleBillToChange(e.target.value)} style={{ cursor: 'pointer' }}>
-            {state.branding.billingLocations.map(loc => <option key={loc} value={loc}>{loc}</option>)}
+            {(state.branding.billingLocations || []).map(loc => <option key={loc} value={loc}>{loc}</option>)}
             <option value="ADD_NEW">+ (Add New Location)</option>
           </select>
         </div>
@@ -1406,7 +1407,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
             className="btn-orange" 
             onClick={() => {
               if (newLoc.trim()) {
-                const updatedLocations = [...state.branding.billingLocations, newLoc.trim()];
+                const updatedLocations = [...(state.branding.billingLocations || []), newLoc.trim()];
                 state.updateBranding({
                   ...state.branding,
                   billingLocations: updatedLocations
@@ -1782,7 +1783,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                 <div className="form-group">
                   <label>Bill to</label>
                   <select className="form-control" value={current.billTo} onChange={e => handleApprovalBillToChange(req.id, e.target.value)} style={{ cursor: 'pointer' }}>
-                    {state.branding.billingLocations.map(loc => <option key={loc} value={loc}>{loc}</option>)}
+                    {(state.branding.billingLocations || []).map(loc => <option key={loc} value={loc}>{loc}</option>)}
                     <option value="ADD_NEW">+ (Add New Location)</option>
                   </select>
                 </div>
