@@ -2177,6 +2177,22 @@ export function LiveOrdersView({ state, navigateTo }) {
   });
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [askingId, setAskingId] = useState(null);
+
+  const handleAskSupplier = async (e, req) => {
+    e.stopPropagation();
+    if (askingId) return;
+    setAskingId(req.id);
+    try {
+      const saved = await apiService.askSupplierAvailability(req.id);
+      state.setRequests(state.requests.map(r => r.id === req.id ? saved : r));
+      state.showToast("WhatsApp Sent", `Availability request sent for ${req.productName}.`, "success");
+    } catch (err) {
+      state.showToast("Could Not Send WhatsApp Message", err.message || "Please try again.", "success");
+    } finally {
+      setAskingId(null);
+    }
+  };
 
   // Track hash changes to update activeTab if navigated via smart view
   useEffect(() => {
@@ -2361,6 +2377,32 @@ export function LiveOrdersView({ state, navigateTo }) {
                   Product name - <b>{req.productName}</b> ({req.qty} {req.units})
                 </div>
 
+                {req.status === "No Response" && (
+                  <div className="card-product-line" style={{ display: 'flex', alignItems: 'center' }}>
+                    {!req.supplierAsk ? (
+                      <button
+                        onClick={(e) => handleAskSupplier(e, req)}
+                        disabled={askingId === req.id}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', background: '#e9f9ee', color: '#1f9d55',
+                          border: '1px solid #bfe8cd', borderRadius: '8px', padding: '4px 10px', fontSize: '11px',
+                          fontWeight: '800', cursor: askingId === req.id ? 'default' : 'pointer', opacity: askingId === req.id ? 0.6 : 1
+                        }}
+                      >
+                        <Icons.WhatsApp size={13} />
+                        {askingId === req.id ? 'Sending...' : 'Ask Supplier'}
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)' }}>
+                        {req.supplierAsk.stage === 'awaiting_availability' && 'WhatsApp sent — awaiting supplier reply'}
+                        {req.supplierAsk.stage === 'awaiting_date' && 'Supplier confirmed available — awaiting date'}
+                        {req.supplierAsk.stage === 'replied' && req.supplierAsk.availability === 'unavailable' && 'Supplier said not available'}
+                        {req.supplierAsk.stage === 'replied' && req.supplierAsk.availability === 'available' && `Supplier reply: "${req.supplierAsk.rawDateReply}"`}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 <div className="card-status-line">
                   <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: '800' }}>PO: {displayPoNumber}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2382,6 +2424,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
   const [selectedFileName, setSelectedFileName] = useState("");
   const [proofFile, setProofFile] = useState(null);
   const [proofFileName, setProofFileName] = useState("");
+  const [askingSupplier, setAskingSupplier] = useState(false);
 
   // Hooks must run unconditionally on every render (Rules of Hooks). Declaring
   // this useEffect after the early "not found" / "Pending" returns below caused
@@ -2528,6 +2571,20 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
     }
     const entry = req.history && req.history.find(h => h.status === statusName);
     return entry ? { date: entry.timestamp, updatedBy: entry.updatedBy } : null;
+  };
+
+  const handleAskSupplier = async () => {
+    if (askingSupplier) return;
+    setAskingSupplier(true);
+    try {
+      const saved = await apiService.askSupplierAvailability(req.id);
+      state.setRequests(state.requests.map(r => r.id === req.id ? saved : r));
+      state.showToast("WhatsApp Sent", "Availability request sent to the supplier.", "success");
+    } catch (err) {
+      state.showToast("Could Not Send WhatsApp Message", err.message || "Please try again.", "success");
+    } finally {
+      setAskingSupplier(false);
+    }
   };
 
   const handleStatusChange = async (newStatus, remarks = "", proofOfReceipt = null, proofOfReceiptName = "", lrData = null, lrName = "", newDispatchDate = null) => {
@@ -3046,6 +3103,59 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
             </div>
           );
         })()}
+
+        {req.status === "No Response" && (
+          <div style={{
+            background: 'var(--card-bg)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '16px',
+            padding: '16px 20px',
+            marginBottom: '20px',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            <div style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.8px', marginBottom: '10px' }}>
+              Supplier Availability
+            </div>
+            {!req.supplierAsk ? (
+              hasEditPermission ? (
+                <button
+                  onClick={handleAskSupplier}
+                  disabled={askingSupplier}
+                  className="btn-orange"
+                  style={{ width: 'auto', padding: '10px 16px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', cursor: askingSupplier ? 'default' : 'pointer', opacity: askingSupplier ? 0.7 : 1 }}
+                >
+                  <Icons.WhatsApp size={16} />
+                  {askingSupplier ? 'Sending...' : 'Ask Supplier on WhatsApp'}
+                </button>
+              ) : (
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No WhatsApp availability request sent yet.</p>
+              )
+            ) : (
+              <div>
+                <p style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' }}>
+                  {req.supplierAsk.stage === 'awaiting_availability' && `Sent ${new Date(req.supplierAsk.sentAt).toLocaleString()} — awaiting supplier reply.`}
+                  {req.supplierAsk.stage === 'awaiting_date' && 'Supplier confirmed the material is available — awaiting a delivery date.'}
+                  {req.supplierAsk.stage === 'replied' && req.supplierAsk.availability === 'unavailable' && 'Supplier said the material is not available.'}
+                  {req.supplierAsk.stage === 'replied' && req.supplierAsk.availability === 'available' && 'Supplier confirmed availability and proposed a date:'}
+                </p>
+                {req.supplierAsk.rawDateReply && (
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                    "{req.supplierAsk.rawDateReply}" &mdash; confirm the actual PO date yourself before booking.
+                  </p>
+                )}
+                {hasEditPermission && req.supplierAsk.stage !== 'awaiting_availability' && (
+                  <button
+                    onClick={handleAskSupplier}
+                    disabled={askingSupplier}
+                    style={{ marginTop: '10px', background: 'none', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '6px 12px', fontSize: '11px', fontWeight: '800', cursor: askingSupplier ? 'default' : 'pointer', color: 'var(--text-main)' }}
+                  >
+                    {askingSupplier ? 'Sending...' : 'Ask Again'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Purchase Order (PO) Details & Quick Access */}
         {(req.poNumber || req.supplierId || req.status !== "Pending") && (
