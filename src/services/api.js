@@ -108,6 +108,13 @@ export const apiService = {
   },
 
   // ------------------------------------------------
+  // WHATSAPP - SUPPLIER AVAILABILITY REQUESTS
+  // ------------------------------------------------
+  async askSupplierAvailability(requestId) {
+    return apiFetch(`/whatsapp/ask/${encodeURIComponent(requestId)}`, { method: 'POST' });
+  },
+
+  // ------------------------------------------------
   // SUPPLIER MANAGEMENT API
   // ------------------------------------------------
   async getSuppliers() {

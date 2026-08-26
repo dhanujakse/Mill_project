@@ -79,7 +79,29 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS whatsapp_messages (
+    id TEXT PRIMARY KEY,
+    request_id TEXT,
+    direction TEXT NOT NULL,
+    to_number TEXT,
+    from_number TEXT,
+    provider_message_id TEXT,
+    status TEXT,
+    body TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
+
+// Migrates a whatsapp_messages table created before the Twilio -> Meta Cloud
+// API switch, back when the column was named for Twilio's message SID.
+// No-ops (caught) once already renamed, or on a fresh install that never
+// had the old column.
+try {
+  db.exec('ALTER TABLE whatsapp_messages RENAME COLUMN twilio_sid TO provider_message_id');
+} catch {
+  // already migrated, or fresh install - nothing to do
+}
 
 // ----------------------------------------------------
 // One-time seed: default accounts, demo data, defaults.
