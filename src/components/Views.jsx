@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
-import { CONFIG } from '../config';
+import { CONFIG, COMPANY_ADDRESSES, COMPANY_OPTIONS, getCompanyAddress } from '../config';
 
 // ----------------------------------------------------
 // ICON CONSTANTS (Reusable clean SVG vectors)
@@ -379,17 +379,18 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
 // 2. CREATE REQUEST VIEW COMPONENT
 // ----------------------------------------------------
 export function CreateRequestView({ state, navigateTo, addNotification, openModal, closeModal, setModalContent, cloneId }) {
-  const [productName, setProductName] = useState("");
-  const [qty, setQty] = useState("");
-  const [units, setUnits] = useState("Pieces");
+  const [products, setProducts] = useState([
+    { id: 1, productName: "", qty: "", units: "Pieces", description: "" }
+  ]);
+  const [listeningIndex, setListeningIndex] = useState(null);
   const [suggestedSupplier, setSuggestedSupplier] = useState("");
   const [suggestedSupplierPhone, setSuggestedSupplierPhone] = useState("");
   const [suggestedSupplierEmail, setSuggestedSupplierEmail] = useState("");
   const [suggestedSupplierRemarks, setSuggestedSupplierRemarks] = useState("");
   const [isManualSupplier, setIsManualSupplier] = useState(false);
-  const [billTo, setBillTo] = useState((state.branding.billingLocations && state.branding.billingLocations[0]) || "");
-  const [description, setDescription] = useState("");
-  const [listening, setListening] = useState(false);
+  const [billTo, setBillTo] = useState((state.branding.billingLocations && state.branding.billingLocations[0]) || "ALAGIRI PAPER MILLS");
+  const [shipTo, setShipTo] = useState((state.branding.billingLocations && state.branding.billingLocations[0]) || "ALAGIRI PAPER MILLS");
+  const [transportMode, setTransportMode] = useState("");
   const [errors, setErrors] = useState({});
 
   // New Date, Priority and Document attachments states
@@ -398,32 +399,34 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
   const [attachedFile, setAttachedFile] = useState(null);
   const [attachedFileName, setAttachedFileName] = useState("");
 
-  // Clone details initialization
-  useEffect(() => {
-    if (cloneId && state.requests) {
-      const clonedReq = state.requests.find(r => r.id === cloneId);
-      if (clonedReq) {
-        setProductName(clonedReq.productName || "");
-        setQty(clonedReq.qty ? String(clonedReq.qty) : "");
-        setUnits(clonedReq.units || "Pieces");
-        setSuggestedSupplier(clonedReq.suggestedSupplier || "");
-        setSuggestedSupplierPhone(clonedReq.suggestedSupplierPhone || "");
-        setSuggestedSupplierEmail(clonedReq.suggestedSupplierEmail || "");
-        setSuggestedSupplierRemarks(clonedReq.suggestedSupplierRemarks || "");
-        if (clonedReq.suggestedSupplier && !state.suppliers.some(s => s.companyName.toLowerCase() === clonedReq.suggestedSupplier.toLowerCase())) {
-          setIsManualSupplier(true);
-        }
-        setBillTo(clonedReq.billTo || (state.branding.billingLocations && state.branding.billingLocations[0]) || "");
-        setDescription(clonedReq.description || "");
-        setDueDate(clonedReq.dueDate || "");
-        setPriority(clonedReq.priority || "Normal");
-        setAttachedFile(clonedReq.image || null);
-        setAttachedFileName(clonedReq.imageName || "");
-      }
-    }
-  }, [cloneId, state.requests, state.suppliers]);
+  const addProduct = () => {
+    setProducts(prev => [
+      ...prev,
+      { id: Date.now() + Math.random(), productName: "", qty: "", units: "Pieces", description: "" }
+    ]);
+  };
 
-  const validateField = (field, value) => {
+  const removeProduct = (index) => {
+    if (products.length <= 1) return;
+    setProducts(prev => prev.filter((_, i) => i !== index));
+    setErrors(prev => {
+      const next = { ...prev };
+      delete next[`productName_${index}`];
+      delete next[`qty_${index}`];
+      delete next[`units_${index}`];
+      return next;
+    });
+  };
+
+  const updateProduct = (index, field, value) => {
+    setProducts(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  const validateProductField = (index, field, value) => {
     let err = "";
     if (field === "productName") {
       if (!value.trim()) {
@@ -440,7 +443,60 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       if (!value) {
         err = "Units is required.";
       }
-    } else if (field === "suggestedSupplier") {
+    }
+    setErrors(prev => {
+      const next = { ...prev };
+      if (err) next[`${field}_${index}`] = err;
+      else delete next[`${field}_${index}`];
+      return next;
+    });
+  };
+
+  // Clone details initialization
+  useEffect(() => {
+    if (cloneId && state.requests) {
+      const clonedReq = state.requests.find(r => r.id === cloneId);
+      if (clonedReq) {
+        if (clonedReq.items && clonedReq.items.length > 0) {
+          setProducts(clonedReq.items.map((it, idx) => ({
+            id: idx + 1,
+            productName: it.productName || "",
+            qty: it.qty ? String(it.qty) : "",
+            units: it.units || "Pieces",
+            description: it.description || ""
+          })));
+        } else {
+          setProducts([
+            {
+              id: 1,
+              productName: clonedReq.productName || "",
+              qty: clonedReq.qty ? String(clonedReq.qty) : "",
+              units: clonedReq.units || "Pieces",
+              description: clonedReq.description || ""
+            }
+          ]);
+        }
+        setSuggestedSupplier(clonedReq.suggestedSupplier || "");
+        setSuggestedSupplierPhone(clonedReq.suggestedSupplierPhone || "");
+        setSuggestedSupplierEmail(clonedReq.suggestedSupplierEmail || "");
+        setSuggestedSupplierRemarks(clonedReq.suggestedSupplierRemarks || "");
+        if (clonedReq.suggestedSupplier && !state.suppliers.some(s => s.companyName.toLowerCase() === clonedReq.suggestedSupplier.toLowerCase())) {
+          setIsManualSupplier(true);
+        }
+        setBillTo(clonedReq.billTo || (state.branding.billingLocations && state.branding.billingLocations[0]) || "ALAGIRI PAPER MILLS");
+        setShipTo(clonedReq.shipTo || clonedReq.billTo || (state.branding.billingLocations && state.branding.billingLocations[0]) || "ALAGIRI PAPER MILLS");
+        setTransportMode(clonedReq.transportMode || "");
+        setDueDate(clonedReq.dueDate || "");
+        setPriority(clonedReq.priority || "Normal");
+        setAttachedFile(clonedReq.image || null);
+        setAttachedFileName(clonedReq.imageName || "");
+      }
+    }
+  }, [cloneId, state.requests, state.suppliers, state.branding.billingLocations]);
+
+  const validateField = (field, value) => {
+    let err = "";
+    if (field === "suggestedSupplier") {
       if (isManualSupplier && !value.trim()) {
         err = "Supplier Name is required.";
       }
@@ -604,12 +660,14 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       let newLoc = "";
       setModalContent(
         <div style={{ textAlign: 'left' }}>
-          <p style={{ fontSize: '13px', marginBottom: '12px' }}>Enter the name of the new delivery/billing location:</p>
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+            Enter the new billing company/location name:
+          </p>
           <div className="form-group">
             <input 
               type="text" 
               className="form-control" 
-              placeholder="e.g. Warehouse 3 - Chennai" 
+              placeholder="e.g. ALAGIRI BOARD DIVISION" 
               onChange={e => { newLoc = e.target.value; }} 
               style={{ cursor: 'text' }}
             />
@@ -639,16 +697,68 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       setBillTo(val);
     }
   };
+
+  const handleShipToChange = (val) => {
+    if (val === "ADD_NEW") {
+      let newLoc = "";
+      setModalContent(
+        <div style={{ textAlign: 'left' }}>
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+            Enter the new shipping company/location name:
+          </p>
+          <div className="form-group">
+            <input 
+              type="text" 
+              className="form-control" 
+              placeholder="e.g. ALAGIRI BOARD DIVISION" 
+              onChange={e => { newLoc = e.target.value; }} 
+              style={{ cursor: 'text' }}
+            />
+          </div>
+          <button 
+            className="btn-orange" 
+            onClick={() => {
+              if (newLoc.trim()) {
+                const updatedLocations = [...(state.branding.billingLocations || []), newLoc.trim()];
+                state.updateBranding({
+                  ...state.branding,
+                  billingLocations: updatedLocations
+                });
+                setShipTo(newLoc.trim());
+              }
+              closeModal();
+            }} 
+            style={{ width: '100%', cursor: 'pointer' }}
+          >
+            Add Location
+          </button>
+        </div>,
+        "Add New Location"
+      );
+      openModal();
+    } else {
+      setShipTo(val);
+    }
+  };
   const user = state.currentUser;
   const isEmployee = user.role === "Employee";
 
   const handleSubmit = async () => {
     const newErrors = {};
-    if (!productName.trim()) newErrors.productName = "Product Name is required.";
-    const quantity = parseFloat(qty);
-    if (!qty) newErrors.qty = "Quantity is required.";
-    else if (isNaN(quantity) || quantity <= 0) newErrors.qty = "Quantity must be a positive number.";
-    if (!units) newErrors.units = "Units is required.";
+    products.forEach((prod, index) => {
+      if (!prod.productName.trim()) {
+        newErrors[`productName_${index}`] = "Product Name is required.";
+      }
+      const quantity = parseFloat(prod.qty);
+      if (!prod.qty) {
+        newErrors[`qty_${index}`] = "Quantity is required.";
+      } else if (isNaN(quantity) || quantity <= 0) {
+        newErrors[`qty_${index}`] = "Quantity must be a positive number.";
+      }
+      if (!prod.units) {
+        newErrors[`units_${index}`] = "Units is required.";
+      }
+    });
 
     const isManualOrCustom = isManualSupplier || (suggestedSupplier.trim() && !state.suppliers.some(s => s.companyName.toLowerCase() === suggestedSupplier.trim().toLowerCase()));
 
@@ -681,18 +791,29 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       return;
     }
 
+    const items = products.map(p => ({
+      productName: p.productName.trim(),
+      qty: parseFloat(p.qty) || 1,
+      units: p.units,
+      description: (p.description || "").trim()
+    }));
+
+    const primaryProduct = items[0] || { productName: "", qty: 1, units: "Pieces", description: "" };
+
     if (cloneId) {
       const original = state.requests.find(r => r.id === cloneId);
       if (original) {
         const fields = [
-          { name: "Product Name", prev: original.productName, current: productName, key: "productName" },
-          { name: "Quantity", prev: original.qty, current: quantity, key: "qty" },
-          { name: "Units", prev: original.units, current: units, key: "units" },
+          { name: "Product Name", prev: original.productName, current: primaryProduct.productName, key: "productName" },
+          { name: "Quantity", prev: original.qty, current: primaryProduct.qty, key: "qty" },
+          { name: "Units", prev: original.units, current: primaryProduct.units, key: "units" },
           { name: "Priority", prev: original.priority, current: priority, key: "priority" },
           { name: "Bill To", prev: original.billTo, current: billTo, key: "billTo" },
+          { name: "Ship To", prev: original.shipTo, current: shipTo, key: "shipTo" },
+          { name: "Mode of Transport", prev: original.transportMode, current: transportMode, key: "transportMode" },
           { name: "Due Date", prev: original.dueDate, current: dueDate, key: "dueDate" },
           { name: "Suggested Supplier", prev: original.suggestedSupplier, current: suggestedSupplier, key: "suggestedSupplier" },
-          { name: "Description", prev: original.description, current: description, key: "description" },
+          { name: "Description", prev: original.description, current: primaryProduct.description, key: "description" },
           { name: "Supplier Phone", prev: original.suggestedSupplierPhone, current: suggestedSupplierPhone, key: "suggestedSupplierPhone" },
           { name: "Supplier Email", prev: original.suggestedSupplierEmail, current: suggestedSupplierEmail, key: "suggestedSupplierEmail" },
           { name: "Supplier Remarks", prev: original.suggestedSupplierRemarks, current: suggestedSupplierRemarks, key: "suggestedSupplierRemarks" },
@@ -726,14 +847,17 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
 
         const updatedReq = {
           ...original,
-          productName,
-          qty: quantity,
-          units,
+          productName: primaryProduct.productName,
+          qty: primaryProduct.qty,
+          units: primaryProduct.units,
+          description: primaryProduct.description,
+          items,
           priority: priority || "Normal",
           billTo,
+          shipTo: shipTo || billTo,
+          transportMode: transportMode.trim(),
           dueDate: dueDate || original.dueDate,
           suggestedSupplier: suggestedSupplier || "",
-          description,
           suggestedSupplierPhone: suggestedSupplierPhone || "",
           suggestedSupplierEmail: suggestedSupplierEmail || "",
           suggestedSupplierRemarks: suggestedSupplierRemarks || "",
@@ -759,10 +883,6 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       }
     }
 
-    // Timestamp-based id: with a real shared backend, multiple people can create
-    // requests concurrently, so an id derived from the current in-memory list
-    // length could collide (two employees submitting at once, or an id being
-    // reused after older requests are no longer loaded client-side).
     const reqId = `REQ-${Date.now()}`;
 
     const newReq = {
@@ -772,15 +892,18 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       date: new Date().toISOString(),
       createdDate: new Date().toLocaleDateString('en-GB'),
       createdTime: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-      productName,
-      qty: quantity,
-      units,
+      productName: primaryProduct.productName,
+      qty: primaryProduct.qty,
+      units: primaryProduct.units,
+      description: primaryProduct.description,
+      items,
       suggestedSupplier: suggestedSupplier || "",
       suggestedSupplierPhone: suggestedSupplierPhone || "",
       suggestedSupplierEmail: suggestedSupplierEmail || "",
       suggestedSupplierRemarks: suggestedSupplierRemarks || "",
       billTo,
-      description,
+      shipTo: shipTo || billTo,
+      transportMode: transportMode.trim(),
       status: "Pending",
       dueDate: dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       priority: priority || "Normal",
@@ -804,7 +927,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
     const saved = await apiService.createRequest(newReq);
     state.setRequests([saved, ...state.requests]);
 
-    state.logEvent("Created Request", "None", "Pending", `Created request ${reqId} for ${productName}.`);
+    state.logEvent("Created Request", "None", "Pending", `Created request ${reqId} for ${items.map(i => i.productName).join(', ')}.`);
 
     const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     addNotification(
@@ -813,13 +936,12 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       "Admin"
     );
 
-    // Simulated Hook trigger
     state.triggerWebhook("request.new", saved);
 
     navigateTo('#home');
   };
 
-  const handleVoiceInput = (e) => {
+  const handleVoiceInputForProduct = (e, index) => {
     e.preventDefault();
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -829,17 +951,16 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       recognition.lang = 'en-US';
       recognition.interimResults = false;
 
-      recognition.onstart = () => setListening(true);
+      recognition.onstart = () => setListeningIndex(index);
       recognition.onresult = (event) => {
         const text = event.results[0][0].transcript;
-        setDescription(prev => (prev ? prev + " " + text : text));
+        updateProduct(index, "description", (products[index]?.description ? products[index].description + " " + text : text));
       };
-      recognition.onerror = () => setListening(false);
-      recognition.onend = () => setListening(false);
+      recognition.onerror = () => setListeningIndex(null);
+      recognition.onend = () => setListeningIndex(null);
       recognition.start();
     } else {
-      setListening(true);
-      // Fallback text simulation
+      setListeningIndex(index);
       let phrases = [
         "Replacement parts for main paper pulper conveyor belt. Urgently needed for mill shutdown next week.",
         "Urgent requirement: Heavy-duty 6204 bearings for utility pump assembly. Site Duplex Unit 1.",
@@ -849,11 +970,11 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       let charIdx = 0;
       const interval = setInterval(() => {
         if (charIdx < phrase.length) {
-          setDescription(prev => prev + phrase.charAt(charIdx));
+          updateProduct(index, "description", (products[index]?.description || "") + phrase.charAt(charIdx));
           charIdx++;
         } else {
           clearInterval(interval);
-          setListening(false);
+          setListeningIndex(null);
         }
       }, 30);
     }
@@ -871,34 +992,169 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       </header>
 
       <div style={{ paddingTop: '10px' }}>
-        <div className="form-group">
-          <label>Product name</label>
-          <input type="text" className="form-control" placeholder="e.g. chain wheel" value={productName} onChange={e => { setProductName(e.target.value); validateField("productName", e.target.value); }} style={{ border: errors.productName ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)', cursor: 'text' }} />
-          {errors.productName && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px', textAlign: 'left' }}>{errors.productName}</div>}
+        {/* Products Section with Multi-Product Support */}
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <label style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: 'var(--text-main)' }}>
+              Requested Products ({products.length})
+            </label>
+          </div>
+
+          {products.map((prod, index) => (
+            <div 
+              key={prod.id || index}
+              style={{
+                background: 'var(--card-bg)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--border-radius-md)',
+                padding: '16px',
+                marginBottom: '14px',
+                textAlign: 'left',
+                boxShadow: 'var(--shadow-sm)',
+                position: 'relative'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <span style={{ 
+                  background: '#ffedd5', 
+                  color: 'var(--primary-orange)', 
+                  fontWeight: '800', 
+                  fontSize: '11px', 
+                  padding: '3px 8px', 
+                  borderRadius: '6px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.4px'
+                }}>
+                  Item {index + 1}
+                </span>
+
+                {products.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeProduct(index)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--status-red)',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '2px 6px'
+                    }}
+                  >
+                    ✕ Remove
+                  </button>
+                )}
+              </div>
+
+              <div className="form-group">
+                <label>Product name</label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  placeholder="e.g. chain wheel" 
+                  value={prod.productName} 
+                  onChange={e => {
+                    updateProduct(index, "productName", e.target.value);
+                    validateProductField(index, "productName", e.target.value);
+                  }} 
+                  style={{ border: errors[`productName_${index}`] ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)', cursor: 'text' }} 
+                />
+                {errors[`productName_${index}`] && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px', textAlign: 'left' }}>{errors[`productName_${index}`]}</div>}
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Qty</label>
+                  <input 
+                    type="number" 
+                    className="form-control" 
+                    placeholder="10" 
+                    value={prod.qty} 
+                    onChange={e => {
+                      updateProduct(index, "qty", e.target.value);
+                      validateProductField(index, "qty", e.target.value);
+                    }} 
+                    style={{ border: errors[`qty_${index}`] ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)', cursor: 'text' }} 
+                  />
+                  {errors[`qty_${index}`] && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px', textAlign: 'left' }}>{errors[`qty_${index}`]}</div>}
+                </div>
+                <div className="form-group">
+                  <label>Units</label>
+                  <select 
+                    className="form-control" 
+                    value={prod.units} 
+                    onChange={e => {
+                      updateProduct(index, "units", e.target.value);
+                      validateProductField(index, "units", e.target.value);
+                    }} 
+                    style={{ cursor: 'pointer', border: errors[`units_${index}`] ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)' }}
+                  >
+                    <option value="Pieces">Pieces</option>
+                    <option value="Kg">Kg</option>
+                    <option value="Litre">Litre</option>
+                    <option value="Box">Box</option>
+                    <option value="Meter">Meter</option>
+                    <option value="Nos">Nos</option>
+                    <option value="Feet">Feet</option>
+                    <option value="Length">Length</option>
+                  </select>
+                  {errors[`units_${index}`] && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px', textAlign: 'left' }}>{errors[`units_${index}`]}</div>}
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Description</label>
+                <div className="textarea-container">
+                  <textarea 
+                    className="form-control" 
+                    rows="2" 
+                    placeholder="Enter item specifications..." 
+                    value={prod.description} 
+                    onChange={e => updateProduct(index, "description", e.target.value)}
+                  ></textarea>
+                  <button 
+                    type="button"
+                    className={`mic-btn ${listeningIndex === index ? 'listening' : ''}`} 
+                    onClick={(e) => handleVoiceInputForProduct(e, index)} 
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <Icons.Mic />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <button
+            type="button"
+            onClick={addProduct}
+            style={{
+              width: '100%',
+              backgroundColor: 'transparent',
+              color: 'var(--primary-orange)',
+              border: '1.5px dashed var(--primary-orange)',
+              borderRadius: '12px',
+              padding: '10px 16px',
+              fontSize: '13px',
+              fontWeight: '800',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              transition: 'all 0.2s ease',
+              marginBottom: '18px'
+            }}
+          >
+            + Add Product
+          </button>
         </div>
 
-        <div className="form-row">
-          <div className="form-group">
-            <label>Qty</label>
-            <input type="number" className="form-control" placeholder="10" value={qty} onChange={e => { setQty(e.target.value); validateField("qty", e.target.value); }} style={{ border: errors.qty ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)', cursor: 'text' }} />
-            {errors.qty && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px', textAlign: 'left' }}>{errors.qty}</div>}
-          </div>
-          <div className="form-group">
-            <label>Units</label>
-            <select className="form-control" value={units} onChange={e => { setUnits(e.target.value); validateField("units", e.target.value); }} style={{ cursor: 'pointer', border: errors.units ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)' }}>
-              <option value="Pieces">Pieces</option>
-              <option value="Kg">Kg</option>
-              <option value="Litre">Litre</option>
-              <option value="Box">Box</option>
-              <option value="Meter">Meter</option>
-              <option value="Nos">Nos</option>
-              <option value="Feet">Feet</option>
-              <option value="Length">Length</option>
-            </select>
-            {errors.units && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px', textAlign: 'left' }}>{errors.units}</div>}
-          </div>
-        </div>
-
+        {/* Suggest Supplier Section */}
         <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--border-radius-md)', padding: '16px', marginBottom: '16px', background: 'var(--card-bg)', textAlign: 'left' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h4 style={{ fontSize: '12px', fontWeight: '800', margin: 0, textTransform: 'uppercase', color: 'var(--primary-orange)', letterSpacing: '0.5px' }}>
@@ -928,7 +1184,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
           </div>
 
           {!isManualSupplier ? (
-            <div className="form-group">
+            <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Choose Supplier</label>
               <select className="form-control" value={suggestedSupplier} onChange={e => {
                 const name = e.target.value;
@@ -971,7 +1227,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
                 {errors.suggestedSupplier && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px', textAlign: 'left' }}>{errors.suggestedSupplier}</div>}
               </div>
 
-              <div className="form-group" style={{ marginTop: '12px' }}>
+              <div className="form-group" style={{ marginTop: '12px', marginBottom: 0 }}>
                 <label>Supplier Mobile Number <span style={{ color: 'var(--status-red)' }}>*</span></label>
                 <input 
                   type="text" 
@@ -990,22 +1246,49 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
           )}
         </div>
 
-        <div className="form-group">
-          <label>Bill to</label>
-          <select className="form-control" value={billTo} onChange={e => handleBillToChange(e.target.value)} style={{ cursor: 'pointer' }}>
-            {(state.branding.billingLocations || []).map(loc => <option key={loc} value={loc}>{loc}</option>)}
-            <option value="ADD_NEW">+ (Add New Location)</option>
-          </select>
+        {/* Bill To & Ship To Selection */}
+        <div className="form-row">
+          <div className="form-group">
+            <label>Bill to</label>
+            <select 
+              className="form-control" 
+              value={billTo} 
+              onChange={e => handleBillToChange(e.target.value)} 
+              style={{ cursor: 'pointer' }}
+            >
+              {(state.branding.billingLocations || COMPANY_OPTIONS).map(loc => (
+                <option key={loc} value={loc}>{loc}</option>
+              ))}
+              <option value="ADD_NEW">+ (Add New Location)</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Ship to</label>
+            <select 
+              className="form-control" 
+              value={shipTo} 
+              onChange={e => handleShipToChange(e.target.value)} 
+              style={{ cursor: 'pointer' }}
+            >
+              {(state.branding.billingLocations || COMPANY_OPTIONS).map(loc => (
+                <option key={loc} value={loc}>{loc}</option>
+              ))}
+              <option value="ADD_NEW">+ (Add New Location)</option>
+            </select>
+          </div>
         </div>
 
+        {/* Mode of Transport Field */}
         <div className="form-group">
-          <label>Description</label>
-          <div className="textarea-container">
-            <textarea className="form-control" rows="4" placeholder="Enter specifications..." value={description} onChange={e => setDescription(e.target.value)}></textarea>
-            <button className={`mic-btn ${listening ? 'listening' : ''}`} onClick={handleVoiceInput} style={{ cursor: 'pointer' }}>
-              <Icons.Mic />
-            </button>
-          </div>
+          <label>Mode of Transport</label>
+          <input 
+            type="text" 
+            className="form-control" 
+            placeholder="e.g. Gokila lorry / Professional courier" 
+            value={transportMode} 
+            onChange={e => setTransportMode(e.target.value)} 
+            style={{ cursor: 'text' }} 
+          />
         </div>
 
         <div className="form-row" style={{ marginTop: '16px' }}>
@@ -1172,32 +1455,32 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
   );
 }
 
+export const isSupplierMatchingProduct = (supplierProducts, requestedProduct) => {
+  if (!supplierProducts || !requestedProduct) return false;
+  const supProds = supplierProducts.toLowerCase();
+  const reqProd = requestedProduct.toLowerCase();
+  
+  if (supProds.includes(reqProd)) return true;
+  
+  const cleanedReq = reqProd
+    .replace(/\d+/g, '')
+    .replace(/\b(pcs|pc|kg|g|litre|litres|box|boxes|meter|meters|nos|feet|foot|drums|units|unit|length)\b/gi, '')
+    .trim();
+    
+  if (!cleanedReq) return false;
+  if (supProds.includes(cleanedReq)) return true;
+  
+  const words = cleanedReq.split(/[\s,.\-_/]+/).filter(w => w.length > 2);
+  if (words.length === 0) return false;
+  
+  return words.some(word => supProds.includes(word));
+};
+
 // ----------------------------------------------------
 // SUPPLIER PICKER SUB-COMPONENT (WITH SEARCH & HIGHLIGHTING)
 // ----------------------------------------------------
 export function SupplierPicker({ suppliers, currentSupplierId, onSelect, productName }) {
   const [query, setQuery] = useState("");
-
-  const isSupplierMatchingProduct = (supplierProducts, requestedProduct) => {
-    if (!supplierProducts || !requestedProduct) return false;
-    const supProds = supplierProducts.toLowerCase();
-    const reqProd = requestedProduct.toLowerCase();
-    
-    if (supProds.includes(reqProd)) return true;
-    
-    const cleanedReq = reqProd
-      .replace(/\d+/g, '')
-      .replace(/\b(pcs|pc|kg|g|litre|litres|box|boxes|meter|meters|nos|feet|foot|drums|units|unit|length)\b/gi, '')
-      .trim();
-      
-    if (!cleanedReq) return false;
-    if (supProds.includes(cleanedReq)) return true;
-    
-    const words = cleanedReq.split(/[\s,.\-_/]+/).filter(w => w.length > 2);
-    if (words.length === 0) return false;
-    
-    return words.some(word => supProds.includes(word));
-  };
 
   const getSortedSuppliers = () => {
     const reqProd = productName || "";
@@ -1327,6 +1610,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
   const [selectedRequestId, setSelectedRequestId] = useState(getSelectedIdFromHash());
   const [formData, setFormData] = useState({});
   const [ignoredSuggestions, setIgnoredSuggestions] = useState({});
+  const [rejectedSuggestions, setRejectedSuggestions] = useState({});
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -1341,17 +1625,19 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
     const data = { ...formData };
     state.requests.forEach(req => {
       if (!data[req.id]) {
-        const matchSupplier = state.suppliers.find(s => 
-          (s.companyName && req.suggestedSupplier && s.companyName.toLowerCase() === req.suggestedSupplier.toLowerCase()) || 
-          (s.products && req.productName && s.products.toLowerCase().includes((req.productName || '').split(' ')[0].toLowerCase()))
-        );
+        const reqItems = (req.items && req.items.length > 0)
+          ? req.items
+          : [{ productName: req.productName || "", qty: req.qty || 1, units: req.units || "pcs", description: req.description || "" }];
         data[req.id] = {
-          productName: req.productName || "",
-          qty: req.qty || 1,
-          units: req.units || "pcs",
-          description: req.description || "",
-          billTo: req.billTo || (state.branding.billingLocations ? state.branding.billingLocations[0] : ""),
-          supplierId: matchSupplier ? matchSupplier.id : (req.supplierId || "")
+          productName: req.productName || reqItems[0].productName || "",
+          qty: req.qty || reqItems[0].qty || 1,
+          units: req.units || reqItems[0].units || "pcs",
+          description: req.description || reqItems[0].description || "",
+          items: reqItems,
+          billTo: req.billTo || (state.branding.billingLocations ? state.branding.billingLocations[0] : "ALAGIRI PAPER MILLS"),
+          shipTo: req.shipTo || req.billTo || (state.branding.billingLocations ? state.branding.billingLocations[0] : "ALAGIRI PAPER MILLS"),
+          transportMode: req.transportMode || "",
+          supplierId: req.supplierId || ""
         };
       }
     });
@@ -1371,7 +1657,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
   const openSupplierPicker = (requestId) => {
     const handleSelect = (supId) => {
       updateCardField(requestId, "supplierId", supId);
-      // Requirement 10: Automatically hide suggested supplier recommendation card once user selects a supplier
+      // Automatically hide suggested supplier recommendation card once user selects a supplier
       setIgnoredSuggestions(prev => ({ ...prev, [requestId]: true }));
       closeModal();
     };
@@ -1393,12 +1679,14 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
       let newLoc = "";
       setModalContent(
         <div style={{ textAlign: 'left' }}>
-          <p style={{ fontSize: '13px', marginBottom: '12px' }}>Enter the name of the new delivery/billing location:</p>
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+            Enter the new billing company/location name:
+          </p>
           <div className="form-group">
             <input 
               type="text" 
               className="form-control" 
-              placeholder="e.g. Warehouse 3 - Chennai" 
+              placeholder="e.g. ALAGIRI BOARD DIVISION" 
               onChange={e => { newLoc = e.target.value; }} 
               style={{ cursor: 'text' }}
             />
@@ -1407,7 +1695,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
             className="btn-orange" 
             onClick={() => {
               if (newLoc.trim()) {
-                const updatedLocations = [...(state.branding.billingLocations || []), newLoc.trim()];
+                const updatedLocations = [...(state.branding.billingLocations || COMPANY_OPTIONS), newLoc.trim()];
                 state.updateBranding({
                   ...state.branding,
                   billingLocations: updatedLocations
@@ -1426,6 +1714,49 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
       openModal();
     } else {
       updateCardField(reqId, "billTo", val);
+    }
+  };
+
+  const handleApprovalShipToChange = (reqId, val) => {
+    if (val === "ADD_NEW") {
+      let newLoc = "";
+      setModalContent(
+        <div style={{ textAlign: 'left' }}>
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+            Enter the new shipping company/location name:
+          </p>
+          <div className="form-group">
+            <input 
+              type="text" 
+              className="form-control" 
+              placeholder="e.g. ALAGIRI BOARD DIVISION" 
+              onChange={e => { newLoc = e.target.value; }} 
+              style={{ cursor: 'text' }}
+            />
+          </div>
+          <button 
+            className="btn-orange" 
+            onClick={() => {
+              if (newLoc.trim()) {
+                const updatedLocations = [...(state.branding.billingLocations || COMPANY_OPTIONS), newLoc.trim()];
+                state.updateBranding({
+                  ...state.branding,
+                  billingLocations: updatedLocations
+                });
+                updateCardField(reqId, "shipTo", newLoc.trim());
+              }
+              closeModal();
+            }} 
+            style={{ width: '100%', cursor: 'pointer' }}
+          >
+            Add Location
+          </button>
+        </div>,
+        "Add New Location"
+      );
+      openModal();
+    } else {
+      updateCardField(reqId, "shipTo", val);
     }
   };
 
@@ -1475,6 +1806,8 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
         { name: "Units", prev: req.units, current: cardData.units, key: "units" },
         { name: "Description", prev: req.description, current: cardData.description, key: "description" },
         { name: "Bill To", prev: req.billTo, current: cardData.billTo, key: "billTo" },
+        { name: "Ship To", prev: req.shipTo, current: cardData.shipTo, key: "shipTo" },
+        { name: "Mode of Transport", prev: req.transportMode, current: cardData.transportMode, key: "transportMode" },
         { name: "Supplier ID", prev: req.supplierId, current: cardData.supplierId, key: "supplierId" }
       ];
 
@@ -1515,13 +1848,22 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
         }
       ];
 
+      const cardItems = (cardData.items && cardData.items.length > 0)
+        ? cardData.items
+        : (req.items && req.items.length > 0)
+          ? req.items
+          : [{ productName: cardData.productName, qty: parseFloat(cardData.qty), units: cardData.units, description: cardData.description }];
+
       const updatedReq = {
         ...req,
         productName: cardData.productName,
         qty: parseFloat(cardData.qty),
         units: cardData.units,
         description: cardData.description,
+        items: cardItems,
         billTo: cardData.billTo,
+        shipTo: cardData.shipTo || cardData.billTo,
+        transportMode: (cardData.transportMode || "").trim(),
         supplierId: cardData.supplierId,
         poNumber: `PO-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
         poDate: new Date().toISOString(),
@@ -1694,7 +2036,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                 </div>
                 
                 <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', marginBottom: '6px' }}>
-                  {req.productName} <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)' }}>({req.qty} {req.units})</span>
+                  {req.productName} {req.items && req.items.length > 1 ? <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--primary-orange)', background: '#fff7ed', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fed7aa', marginLeft: '6px' }}>+{req.items.length - 1} more item{req.items.length > 2 ? 's' : ''}</span> : null} <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)' }}>({req.qty} {req.units})</span>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: 'var(--text-muted)', paddingTop: '6px', borderTop: '1px dashed var(--border-color)' }}>
@@ -1705,10 +2047,28 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
             ))
           )
         ) : (
-          /* Requirement 8 & 9: Request Details / Review Page for Selected Order */
+          /* Request Details / Review Page for Selected Order */
           (() => {
             const req = selectedReq;
-            const current = formData[req.id] || { productName: req.productName, qty: req.qty, units: req.units, description: req.description, billTo: req.billTo, supplierId: "" };
+            const reqItems = (req.items && req.items.length > 0)
+              ? req.items
+              : [{ productName: req.productName || "", qty: req.qty || 1, units: req.units || "Pieces", description: req.description || "" }];
+
+            const current = formData[req.id] || { 
+              productName: req.productName, 
+              qty: req.qty, 
+              units: req.units, 
+              description: req.description, 
+              items: reqItems,
+              billTo: req.billTo || "ALAGIRI PAPER MILLS", 
+              shipTo: req.shipTo || req.billTo || "ALAGIRI PAPER MILLS",
+              transportMode: req.transportMode || "",
+              supplierId: "" 
+            };
+            const currentItems = (current.items && current.items.length > 0)
+              ? current.items
+              : reqItems;
+
             const isEmployee = state.currentUser.role === 'Employee';
 
             if (isEmployee) {
@@ -1724,20 +2084,32 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                     </span>
                   </div>
 
-                  <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
-                    <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)', marginBottom: '8px' }}>
-                      {req.productName} <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-muted)' }}>({req.qty} {req.units})</span>
-                    </div>
-                    <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
-                      <b>Description:</b> {req.description || "No description provided."}
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-main)', borderTop: '1px dashed var(--border-color)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <div><b>Delivery Location:</b> {req.billTo || "Standard Warehouse"}</div>
-                      <div><b>Requested By:</b> {req.employeeName || "Employee"}</div>
-                      <div><b>Request Date:</b> {new Date(req.date).toLocaleDateString('en-GB')}</div>
-                      {assignedSup && <div><b>Assigned Supplier:</b> {assignedSup.companyName}</div>}
-                      {!assignedSup && req.suggestedSupplier && <div><b>Suggested Supplier:</b> {req.suggestedSupplier}</div>}
-                    </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
+                    {reqItems.map((it, idx) => (
+                      <div key={idx} style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '14px' }}>
+                        {reqItems.length > 1 && (
+                          <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--primary-orange)', textTransform: 'uppercase', marginBottom: '4px' }}>Item {idx + 1}</div>
+                        )}
+                        <div style={{ fontSize: '17px', fontWeight: '800', color: 'var(--text-main)', marginBottom: '4px' }}>
+                          {it.productName} <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)' }}>({it.qty} {it.units})</span>
+                        </div>
+                        {it.description && (
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                            <b>Description:</b> {it.description}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '14px', marginBottom: '14px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div><b>Bill To:</b> {req.billTo || "ALAGIRI PAPER MILLS"}</div>
+                    <div><b>Ship To:</b> {req.shipTo || req.billTo || "ALAGIRI PAPER MILLS"}</div>
+                    {req.transportMode && <div><b>Mode of Transport:</b> <span style={{ fontWeight: '800', color: 'var(--primary-orange)' }}>{req.transportMode}</span></div>}
+                    <div><b>Requested By:</b> {req.employeeName || "Employee"}</div>
+                    <div><b>Request Date:</b> {new Date(req.date).toLocaleDateString('en-GB')}</div>
+                    {assignedSup && <div><b>Assigned Supplier:</b> {assignedSup.companyName}</div>}
+                    {!assignedSup && req.suggestedSupplier && <div><b>Suggested Supplier:</b> {req.suggestedSupplier}</div>}
                   </div>
                   
                   <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 14px', fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center' }}>
@@ -1749,7 +2121,6 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
             
             return (
               <div key={req.id} className="requested-order-card" style={{ textAlign: 'left' }}>
-                {/* Note: Requirement 9 completely removed the "Request Details" button from top header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                   <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--primary-orange)' }}>
                     Request ID: {req.id}
@@ -1759,104 +2130,197 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                   </div>
                 </div>
                 
-                <div className="form-group" style={{ marginTop: '4px' }}>
-                  <label>Product name</label>
-                  <input type="text" className="form-control" value={current.productName} onChange={e => updateCardField(req.id, "productName", e.target.value)} />
+                {/* Items List for Admin Editing */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
+                  {currentItems.map((item, idx) => (
+                    <div key={idx} style={{ background: '#fafaf9', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '12px' }}>
+                      {currentItems.length > 1 && (
+                        <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--primary-orange)', textTransform: 'uppercase', marginBottom: '8px' }}>
+                          Item {idx + 1}
+                        </div>
+                      )}
+                      
+                      <div className="form-group" style={{ marginTop: '2px', marginBottom: '8px' }}>
+                        <label style={{ fontSize: '11px' }}>Product name</label>
+                        <input 
+                          type="text" 
+                          className="form-control" 
+                          value={item.productName} 
+                          onChange={e => {
+                            const updated = [...currentItems];
+                            updated[idx] = { ...updated[idx], productName: e.target.value };
+                            updateCardField(req.id, "items", updated);
+                            if (idx === 0) updateCardField(req.id, "productName", e.target.value);
+                          }} 
+                        />
+                      </div>
+
+                      <div className="form-row" style={{ marginBottom: '8px' }}>
+                        <div className="form-group">
+                          <label style={{ fontSize: '11px' }}>Qty</label>
+                          <input 
+                            type="number" 
+                            className="form-control" 
+                            value={item.qty} 
+                            onChange={e => {
+                              const updated = [...currentItems];
+                              updated[idx] = { ...updated[idx], qty: e.target.value };
+                              updateCardField(req.id, "items", updated);
+                              if (idx === 0) updateCardField(req.id, "qty", e.target.value);
+                            }} 
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label style={{ fontSize: '11px' }}>Units</label>
+                          <input 
+                            type="text" 
+                            className="form-control" 
+                            list="units-list" 
+                            value={item.units} 
+                            onChange={e => {
+                              const updated = [...currentItems];
+                              updated[idx] = { ...updated[idx], units: e.target.value };
+                              updateCardField(req.id, "items", updated);
+                              if (idx === 0) updateCardField(req.id, "units", e.target.value);
+                            }} 
+                          />
+                        </div>
+                      </div>
+
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label style={{ fontSize: '11px' }}>Description</label>
+                        <textarea 
+                          className="form-control" 
+                          rows="2" 
+                          value={item.description} 
+                          onChange={e => {
+                            const updated = [...currentItems];
+                            updated[idx] = { ...updated[idx], description: e.target.value };
+                            updateCardField(req.id, "items", updated);
+                            if (idx === 0) updateCardField(req.id, "description", e.target.value);
+                          }}
+                        ></textarea>
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
+                {/* Bill To & Ship To Selection in Admin Review */}
                 <div className="form-row">
                   <div className="form-group">
-                    <label>Qty</label>
-                    <input type="number" className="form-control" value={current.qty} onChange={e => updateCardField(req.id, "qty", e.target.value)} />
+                    <label>Bill to</label>
+                    <select 
+                      className="form-control" 
+                      value={current.billTo} 
+                      onChange={e => handleApprovalBillToChange(req.id, e.target.value)} 
+                      style={{ cursor: 'pointer' }}
+                    >
+                      {(state.branding.billingLocations || COMPANY_OPTIONS).map(loc => (
+                        <option key={loc} value={loc}>{loc}</option>
+                      ))}
+                      <option value="ADD_NEW">+ (Add New Location)</option>
+                    </select>
                   </div>
                   <div className="form-group">
-                    <label>Units</label>
-                    <input type="text" className="form-control" list="units-list" value={current.units} onChange={e => updateCardField(req.id, "units", e.target.value)} />
+                    <label>Ship to</label>
+                    <select 
+                      className="form-control" 
+                      value={current.shipTo || current.billTo} 
+                      onChange={e => handleApprovalShipToChange(req.id, e.target.value)} 
+                      style={{ cursor: 'pointer' }}
+                    >
+                      {(state.branding.billingLocations || COMPANY_OPTIONS).map(loc => (
+                        <option key={loc} value={loc}>{loc}</option>
+                      ))}
+                      <option value="ADD_NEW">+ (Add New Location)</option>
+                    </select>
                   </div>
                 </div>
 
+                {/* Mode of Transport in Admin Review */}
                 <div className="form-group">
-                  <label>Description</label>
-                  <textarea className="form-control" rows="2" value={current.description} onChange={e => updateCardField(req.id, "description", e.target.value)}></textarea>
+                  <label>Mode of Transport</label>
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    placeholder="e.g. Gokila lorry / Professional courier" 
+                    value={current.transportMode || ""} 
+                    onChange={e => updateCardField(req.id, "transportMode", e.target.value)} 
+                  />
                 </div>
 
-                <div className="form-group">
-                  <label>Bill to</label>
-                  <select className="form-control" value={current.billTo} onChange={e => handleApprovalBillToChange(req.id, e.target.value)} style={{ cursor: 'pointer' }}>
-                    {(state.branding.billingLocations || []).map(loc => <option key={loc} value={loc}>{loc}</option>)}
-                    <option value="ADD_NEW">+ (Add New Location)</option>
-                  </select>
-                </div>
+                {/* Supplier Section */}
+                {(() => {
+                  const matchingSupplier = state.suppliers.find(s => 
+                    (currentItems && currentItems.length > 0)
+                      ? currentItems.some(it => isSupplierMatchingProduct(s.products, it.productName))
+                      : isSupplierMatchingProduct(s.products, current.productName || req.productName)
+                  );
 
-                {/* Requirement 10: Suggested Supplier Section Improvements */}
-                {req.suggestedSupplier && !ignoredSuggestions[req.id] && (
-                  <div style={{ background: 'var(--bg-cream)', padding: '14px', borderRadius: '10px', marginBottom: '16px', fontSize: '12px', textAlign: 'left', border: '1px solid var(--border-color)' }}>
-                    <div style={{ fontWeight: '850', color: 'var(--primary-orange)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '6px' }}>Suggested Supplier Details:</div>
-                    <div><b>Name:</b> {req.suggestedSupplier}</div>
-                    {req.suggestedSupplierPhone && <div><b>Phone:</b> {req.suggestedSupplierPhone}</div>}
-                    {req.suggestedSupplierEmail && <div><b>Email:</b> {req.suggestedSupplierEmail}</div>}
-                    {req.suggestedSupplierRemarks && <div style={{ marginTop: '4px', fontStyle: 'italic', color: 'var(--text-muted)' }}><b>Remarks:</b> "{req.suggestedSupplierRemarks}"</div>}
-                    
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                      <button 
-                        type="button" 
-                        className="btn-orange" 
-                        onClick={() => {
-                          const match = state.suppliers.find(s => s.companyName.toLowerCase() === req.suggestedSupplier.toLowerCase());
-                          if (match) {
-                            updateCardField(req.id, "supplierId", match.id);
-                            setIgnoredSuggestions(prev => ({ ...prev, [req.id]: true }));
-                            state.showToast("Supplier Approved", `Supplier set to ${match.companyName}`, "info");
-                          } else {
-                            openSupplierPicker(req.id);
-                          }
-                        }}
-                        style={{ padding: '6px 12px', fontSize: '11px', cursor: 'pointer', flex: 1, height: '34px', fontWeight: '800' }}
-                      >
-                        ✓ Approve Supplier
-                      </button>
-                      
-                      {/* Requirement 10: Change Supplier button with Search icon, professional non-red style */}
-                      <button 
-                        type="button" 
-                        onClick={() => {
-                          openSupplierPicker(req.id);
-                        }}
-                        style={{ 
-                          padding: '6px 12px', 
-                          fontSize: '11px', 
-                          fontWeight: '800',
-                          cursor: 'pointer', 
-                          flex: 1, 
-                          height: '34px', 
-                          backgroundColor: 'transparent',
-                          color: '#d97706',
-                          border: '1.5px solid #d97706',
-                          borderRadius: '8px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px'
-                        }}
-                      >
-                        <Icons.Search size={13} /> Change Supplier
-                      </button>
+                  const showSuggestion = !current.supplierId && matchingSupplier && !rejectedSuggestions[req.id];
+
+                  return (
+                    <div className="form-group">
+                      <label>Supplier</label>
+                      {showSuggestion ? (
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button 
+                            type="button" 
+                            className="btn-orange" 
+                            onClick={() => {
+                              updateCardField(req.id, "supplierId", matchingSupplier.id);
+                              state.showToast("Supplier Approved", `Supplier set to ${matchingSupplier.companyName}`, "info");
+                            }}
+                            style={{ 
+                              flex: 1.5, 
+                              padding: '10px 12px', 
+                              fontSize: '12px', 
+                              fontWeight: '700', 
+                              cursor: 'pointer', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center', 
+                              gap: '6px' 
+                            }}
+                          >
+                            Approve Supplier: {matchingSupplier.companyName}
+                          </button>
+                          <button 
+                            type="button" 
+                            className="btn-dark" 
+                            onClick={() => {
+                              setRejectedSuggestions(prev => ({ ...prev, [req.id]: true }));
+                              updateCardField(req.id, "supplierId", "");
+                            }}
+                            style={{ 
+                              flex: 1, 
+                              backgroundColor: '#4B5563', 
+                              marginBottom: 0, 
+                              padding: '10px 12px', 
+                              fontSize: '12px', 
+                              fontWeight: '700', 
+                              cursor: 'pointer' 
+                            }}
+                          >
+                            Reject Supplier
+                          </button>
+                        </div>
+                      ) : (
+                        <select 
+                          className="form-control" 
+                          value={current.supplierId || ""} 
+                          onChange={e => updateCardField(req.id, "supplierId", e.target.value)}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <option value="">Choose Supplier</option>
+                          {state.suppliers.map(s => (
+                            <option key={s.id} value={s.id}>{s.companyName}</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
-                  </div>
-                )}
-
-                {/* Mobile-friendly Supplier selection field */}
-                <div className="form-group">
-                  <label>Active Supplier</label>
-                  <button type="button" className="form-control" style={{ textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: 'var(--card-bg)' }} onClick={() => openSupplierPicker(req.id)}>
-                    <span style={{ color: (current.supplierId || req.suggestedSupplier) ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: (current.supplierId || req.suggestedSupplier) ? '700' : 'normal' }}>
-                      {current.supplierId 
-                        ? (state.suppliers.find(s => s.id === current.supplierId)?.companyName || req.suggestedSupplier || "Choose Supplier") 
-                        : (req.suggestedSupplier ? `Suggested: ${req.suggestedSupplier}` : "Choose Supplier")}
-                    </span>
-                    <Icons.ChevronRight />
-                  </button>
-                </div>
+                  );
+                })()}
 
                 <div className="card-actions-row" style={{ marginTop: '20px' }}>
                   <button className="btn-dark" style={{ backgroundColor: 'var(--status-red)', marginBottom: 0, padding: '10px', cursor: 'pointer' }} onClick={() => handleReject(req.id)}>Reject</button>
@@ -1881,16 +2345,34 @@ export function PoPreviewView({ state, navigateTo, requestId, addNotification })
 
   const supplier = state.suppliers.find(s => s.id === req.supplierId) || {};
   const supplierPhone = supplier.whatsappNumber || supplier.phoneNumber || req.suggestedSupplierPhone || "";
-  const branding = state.branding;
 
-  const formattedMsg = `*PROCUREMENT ORDER: ${req.poNumber}*
-Company: *${branding.companyName}*
+  const items = (req.items && req.items.length > 0)
+    ? req.items
+    : [{ productName: req.productName, qty: req.qty, units: req.units, description: req.description }];
+
+  const billToLines = getCompanyAddress(req.billTo, 'billTo');
+  const shipToLines = getCompanyAddress(req.shipTo || req.billTo, 'shipTo');
+
+  const itemsSummaryText = items.map((it, idx) => 
+    `*Item ${idx + 1}:* ${it.productName}\n*Description:* *${it.description || "N/A"}*\n*Quantity:* ${it.qty} ${it.units}`
+  ).join('\n----------------------------------------\n');
+
+  const formattedMsg = `*PURCHASE ORDER: ${req.poNumber}*
 Date: ${new Date(req.poDate).toLocaleDateString('en-GB')}
-Delivery Location: *${req.billTo}*
+
+*BILL TO:*
+${billToLines.join('\n')}
+
+*SHIP TO:*
+${shipToLines.join('\n')}
+
+*SUPPLIER:*
+${supplier.companyName || "N/A"}
+${supplier.address || ""}
+Ph: ${supplierPhone}
+${req.transportMode ? `\n*MODE OF TRANSPORT:* ${req.transportMode}` : ""}
 ----------------------------------------
-*Material Required:* ${req.productName}
-*Quantity:* ${req.qty} ${req.units}
-*Details:* ${req.description || "N/A"}
+${itemsSummaryText}
 ----------------------------------------
 *Instructions:* Please acknowledge receipt of this PO. Upload LR Copy once shipment is sent.`;
 
@@ -1924,7 +2406,7 @@ Delivery Location: *${req.billTo}*
     <div>
       <header className="app-header">
         <div className="header-left">
-          <button className="back-btn" onClick={() => navigateTo('#requested-orders')}>
+          <button className="back-btn" onClick={() => navigateTo('#requested-orders')} style={{ cursor: 'pointer' }}>
             <Icons.Back />
           </button>
           <h1 style={{ fontSize: '18px' }}>PO Preview</h1>
@@ -1932,63 +2414,115 @@ Delivery Location: *${req.billTo}*
       </header>
 
       <div>
-        <div className="po-document">
-          <div className="po-header-section">
-            <div>
-              <div style={{ fontWeight: '800', fontSize: '13px', color: 'var(--primary-orange)' }}>{branding.logoText} PO</div>
-              <div style={{ fontSize: '10px', color: '#888', marginTop: '2px' }}>{branding.companyName}</div>
+        {/* Purchase Order Document Styled per Reference Layout */}
+        <div className="po-document" style={{ background: '#ffffff', color: '#111827', border: '1.5px solid #d1d5db', borderRadius: '12px', padding: '24px', textAlign: 'left', boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}>
+          
+          {/* Row 1: BILL TO (Top Left) & PURCHASE ORDER Meta (Top Right) */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5px solid #e5e7eb', paddingBottom: '16px', marginBottom: '16px', gap: '16px' }}>
+            <div style={{ flex: 1.2 }}>
+              <div style={{ fontSize: '13px', fontWeight: '900', color: 'var(--primary-orange)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '4px' }}>
+                BILL TO
+              </div>
+              <div style={{ fontSize: '14px', fontWeight: '800', color: '#111827', marginBottom: '2px' }}>
+                {billToLines[0] || req.billTo || "ALAGIRI PAPER MILLS"}
+              </div>
+              {billToLines.slice(1).map((line, lIdx) => (
+                <div key={lIdx} style={{ fontSize: '12px', color: '#4b5563', lineHeight: '1.4' }}>{line}</div>
+              ))}
             </div>
-            <div className="po-meta">
-              <div className="po-title">PURCHASE ORDER</div>
-              <div style={{ marginTop: '4px' }}><b>PO No:</b> {req.poNumber}</div>
-              <div><b>Date:</b> {new Date(req.poDate).toLocaleDateString('en-GB')}</div>
+
+            <div style={{ textAlign: 'right', flex: 1 }}>
+              <div style={{ fontSize: '16px', fontWeight: '900', color: '#111827', letterSpacing: '0.8px' }}>
+                PURCHASE ORDER
+              </div>
+              <div style={{ fontSize: '12px', fontWeight: '800', marginTop: '6px', color: '#374151' }}>
+                <b>PO No:</b> <span style={{ color: 'var(--primary-orange)' }}>{req.poNumber}</span>
+              </div>
+              <div style={{ fontSize: '12px', color: '#4b5563', marginTop: '2px' }}>
+                <b>Date:</b> {new Date(req.poDate).toLocaleDateString('en-GB')}
+              </div>
             </div>
           </div>
 
-          <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-            <div>
-              <b style={{ color: '#666' }}>Supplier:</b><br />
-              <b>{supplier.companyName || "N/A"}</b><br />
-              {supplier.address || ""}<br />
-              Contact: {supplier.contactPerson || ""}<br />
-              Ph: {supplier.phoneNumber || ""}
+          {/* Row 2: Supplier Details (Middle Left) & SHIP TO (Middle Right) */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5px solid #e5e7eb', paddingBottom: '16px', marginBottom: '16px', gap: '16px' }}>
+            <div style={{ flex: 1.2 }}>
+              <div style={{ fontSize: '13px', fontWeight: '900', color: 'var(--primary-orange)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '4px' }}>
+                Supplier:
+              </div>
+              <div style={{ fontSize: '14px', fontWeight: '800', color: '#111827', marginBottom: '2px' }}>
+                {supplier.companyName || "N/A"}
+              </div>
+              {supplier.address && <div style={{ fontSize: '12px', color: '#4b5563', lineHeight: '1.4' }}>{supplier.address}</div>}
+              {supplier.contactPerson && <div style={{ fontSize: '12px', color: '#4b5563', marginTop: '2px' }}>Contact: {supplier.contactPerson}</div>}
+              {supplierPhone && <div style={{ fontSize: '12px', color: '#4b5563', marginTop: '2px' }}>Ph: {supplierPhone}</div>}
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <b style={{ color: '#666' }}>Delivery Site:</b><br />
-              <b>{req.billTo}</b><br />
-              Expected delivery: 7 days
+
+            <div style={{ textAlign: 'right', flex: 1 }}>
+              <div style={{ fontSize: '13px', fontWeight: '900', color: 'var(--primary-orange)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '4px' }}>
+                SHIP TO
+              </div>
+              <div style={{ fontSize: '14px', fontWeight: '800', color: '#111827', marginBottom: '2px' }}>
+                {shipToLines[0] || req.shipTo || req.billTo || "ALAGIRI PAPER MILLS"}
+              </div>
+              {shipToLines.slice(1).map((line, lIdx) => (
+                <div key={lIdx} style={{ fontSize: '12px', color: '#4b5563', lineHeight: '1.4' }}>{line}</div>
+              ))}
             </div>
           </div>
 
-          <table className="po-table">
+          {/* Mode of Transport (Bold and clearly displayed) */}
+          {req.transportMode && (
+            <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#1f2937' }}>
+              <b>Mode of Transport:</b> <span style={{ fontWeight: '900', color: 'var(--primary-orange)', fontSize: '14px', marginLeft: '6px' }}>{req.transportMode}</span>
+            </div>
+          )}
+
+          {/* Table of Items - Zero Pricing */}
+          <table className="po-table" style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
             <thead>
-              <tr>
-                <th style={{ fontSize: '10px' }}>Item</th>
-                <th style={{ fontSize: '10px' }}>Qty</th>
-                <th style={{ fontSize: '10px', textAlign: 'right' }}>Rate</th>
-                <th style={{ fontSize: '10px', textAlign: 'right' }}>Amount</th>
+              <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #d1d5db' }}>
+                <th style={{ fontSize: '12px', fontWeight: '800', padding: '10px', textAlign: 'left', color: '#374151' }}>Item</th>
+                <th style={{ fontSize: '12px', fontWeight: '800', padding: '10px', textAlign: 'right', color: '#374151', width: '140px' }}>Quantity</th>
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td>
-                  <b>{req.productName}</b>
-                  <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>{req.description}</div>
-                </td>
-                <td>{req.qty} {req.units}</td>
-                <td style={{ textAlign: 'right' }}>$150.00</td>
-                <td style={{ textAlign: 'right', fontWeight: '700' }}>${(req.qty * 150.00).toFixed(2)}</td>
-              </tr>
+              {items.map((item, idx) => (
+                <tr key={idx} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                  <td style={{ padding: '12px 10px', textAlign: 'left' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--primary-orange)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                      Item {idx + 1}
+                    </div>
+                    <div style={{ fontSize: '15px', fontWeight: '800', color: '#111827', marginTop: '2px' }}>
+                      {item.productName}
+                    </div>
+                    {/* Product description is main information - larger and bold */}
+                    {item.description && (
+                      <div style={{ fontSize: '14px', fontWeight: '700', color: '#1f2937', marginTop: '6px', lineHeight: '1.5', background: '#fafaf9', padding: '8px 12px', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                        {item.description}
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ padding: '12px 10px', textAlign: 'right', verticalAlign: 'top', fontSize: '14px', fontWeight: '800', color: '#111827' }}>
+                    {item.qty} {item.units}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
 
-          <div className="po-signature">
-            Authorized Signatory<br />
-            <span style={{ fontWeight: 'bold', color: 'var(--primary-orange)' }}>{CONFIG.users.admin.name}</span>
+          <div className="po-signature" style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px dashed #d1d5db', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ fontSize: '11px', color: '#6b7280' }}>
+              Expected delivery: 7 days
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              Authorized Signatory<br />
+              <span style={{ fontWeight: '900', color: 'var(--primary-orange)', fontSize: '14px' }}>{CONFIG.users.admin.name}</span>
+            </div>
           </div>
         </div>
 
-        <button className="btn-orange" onClick={handleShareWhatsApp} style={{ marginBottom: '20px', width: '100%', cursor: 'pointer' }}>
+        <button className="btn-orange" onClick={handleShareWhatsApp} style={{ marginTop: '20px', marginBottom: '20px', width: '100%', cursor: 'pointer' }}>
           Share via WhatsApp
         </button>
       </div>
@@ -3179,6 +3713,10 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
               <div style={{ fontSize: '13px', color: 'var(--text-main)', fontWeight: '700', marginTop: '2px' }}>
                 Supplier: {supplier.companyName || req.suggestedSupplier || "Assigned Supplier"}
               </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div><b>Bill To:</b> {req.billTo || "ALAGIRI PAPER MILLS"} &nbsp;|&nbsp; <b>Ship To:</b> {req.shipTo || req.billTo || "ALAGIRI PAPER MILLS"}</div>
+                {req.transportMode && <div><b>Mode of Transport:</b> <span style={{ fontWeight: '800', color: 'var(--primary-orange)' }}>{req.transportMode}</span></div>}
+              </div>
             </div>
             <button
               onClick={() => navigateTo(`#po-preview?id=${req.id}`)}
@@ -3408,12 +3946,60 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
           </div>
         </div>
 
-        <div className="form-group" style={{ marginTop: '20px' }}>
-          <label>Description</label>
-          <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 'var(--border-radius-sm)', padding: '12px', fontSize: '13px', lineHeight: '1.4', minHeight: '60px', textAlign: 'left' }}>
-            {req.description || "No specifications provided."}
-          </div>
-        </div>
+        {/* Order Products & Details (Multiple Products Support) */}
+        {(() => {
+          const items = (req.items && req.items.length > 0)
+            ? req.items
+            : [{ productName: req.productName, qty: req.qty, units: req.units, description: req.description }];
+
+          return (
+            <div style={{ marginTop: '20px', marginBottom: '20px', textAlign: 'left' }}>
+              <label style={{ fontSize: '13px', fontWeight: '800', marginBottom: '10px', display: 'block', color: 'var(--text-main)' }}>
+                Order Items ({items.length})
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {items.map((it, idx) => (
+                  <div 
+                    key={idx} 
+                    style={{ 
+                      background: 'var(--card-bg)', 
+                      border: '1px solid var(--border-color)', 
+                      borderRadius: '12px', 
+                      padding: '14px 16px',
+                      boxShadow: 'var(--shadow-sm)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <span style={{ 
+                        background: '#ffedd5', 
+                        color: 'var(--primary-orange)', 
+                        fontWeight: '800', 
+                        fontSize: '11px', 
+                        padding: '2px 8px', 
+                        borderRadius: '6px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.4px'
+                      }}>
+                        Item {idx + 1}
+                      </span>
+                      <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-muted)' }}>
+                        {it.qty} {it.units}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '15px', fontWeight: '800', color: 'var(--text-main)', marginBottom: '4px' }}>
+                      {it.productName}
+                    </div>
+                    {it.description && (
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', marginTop: '6px', background: '#f8fafc', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                        <b>Description:</b> {it.description}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {req.status === "Booked" && (
           <button className="btn-orange" onClick={handleVerifyReceived} style={{ marginTop: '16px', cursor: 'pointer', width: '100%' }}>
