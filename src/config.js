@@ -1,4 +1,59 @@
 // Configurable options and mock data for the React Procurement Management System
+export const COMPANY_ADDRESSES = {
+  "ALAGIRI PAPER MILLS": {
+    name: "ALAGIRI PAPER MILLS",
+    billTo: [
+      "ALAGIRI PAPER MILLS",
+      "NO: 1M BHARATHI NAGAR",
+      "2nd Street.",
+      "KOVILPATTI - 628501",
+      "TAMILNADU"
+    ],
+    shipTo: [
+      "ALAGIRI PAPER MILLS",
+      "3/229 N. PULUMPATTI",
+      "N. SUBBIAHPURAM POST.",
+      "SATTUR TALUK.",
+      "TAMILNADU. - 626205"
+    ]
+  },
+  "ALAGIRI DUPLEX": {
+    name: "ALAGIRI DUPLEX",
+    billTo: [
+      "ALAGIRI DUPLEX",
+      "NO: 1/M-1 BHARATHI NAGAR",
+      "NORTH 2nd Street",
+      "KOVILPATTI - 628501",
+      "TAMILNADU"
+    ],
+    shipTo: [
+      "ALAGIRI DUPLEX",
+      "106/3A EAST STREET.",
+      "N. SUBBIAHPURAM",
+      "PETHUREDDI PATTI",
+      "SATTUR TALUK",
+      "TAMILNADU"
+    ]
+  }
+};
+
+export const COMPANY_OPTIONS = [
+  "ALAGIRI PAPER MILLS",
+  "ALAGIRI DUPLEX"
+];
+
+export const getCompanyAddress = (companyName, type = 'billTo') => {
+  if (!companyName) return [];
+  const normalized = String(companyName).toUpperCase().trim();
+  if (normalized.includes("PAPER") || normalized === "ALAGIRI PAPER MILLS") {
+    return COMPANY_ADDRESSES["ALAGIRI PAPER MILLS"][type] || [];
+  }
+  if (normalized.includes("DUPLEX") || normalized === "ALAGIRI DUPLEX") {
+    return COMPANY_ADDRESSES["ALAGIRI DUPLEX"][type] || [];
+  }
+  return [companyName];
+};
+
 export const CONFIG = {
   // App branding (Can be dynamically configured in settings and saved to localStorage)
   branding: {
@@ -10,9 +65,8 @@ export const CONFIG = {
     backgroundColor: "#f5ede6", // Cream/Beige background
     darkCharcoal: "#232120", // Bottom nav/button dark background
     billingLocations: [
-      "Alagiri Duplex (Unit 1)",
-      "Alagiri Kraft Mill (Unit 2)",
-      "Alagiri Board Division"
+      "ALAGIRI PAPER MILLS",
+      "ALAGIRI DUPLEX"
     ]
   },
 
