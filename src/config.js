@@ -57,8 +57,8 @@ export const getCompanyAddress = (companyName, type = 'billTo') => {
 export const CONFIG = {
   // App branding (Can be dynamically configured in settings and saved to localStorage)
   branding: {
-    appName: "Alagiri Procurement System",
-    logoText: "Alagiri",
+    appName: "Mill Mate",
+    logoText: "Mill Mate",
     companyName: "Alagiri Duplex Paper Mills",
     primaryColor: "#e67e35", // Deep orange accent
     primaryColorHover: "#c56422",
