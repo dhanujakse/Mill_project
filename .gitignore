@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 .env
+*.apk
 
 # Backend server
 server/.env

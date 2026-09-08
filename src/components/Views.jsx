@@ -110,10 +110,14 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
 
   return (
     <div>
-      {/* Dashboard Header */}
-      <header className="app-header" style={{ marginBottom: '32px' }}>
-        <div className="header-left">
-          <h1 style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-main)' }}>Dashboard</h1>
+      {/* Dashboard Header with Mill Mate Logo */}
+      <header className="app-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="header-left" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+          <img 
+            src="/millmate-logo.png" 
+            alt="Mill Mate" 
+            style={{ height: '34px', maxWidth: '190px', objectFit: 'contain', display: 'block' }} 
+          />
         </div>
         <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button className="bell-btn" onClick={openNotifications} style={{ cursor: 'pointer', border: 'none', background: 'none' }}>
@@ -4382,6 +4386,12 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
             </div>
           </div>
         </div>
+
+        {/* Mill Mate App Brand Info */}
+        <div style={{ marginTop: '36px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: '20px' }}>
+          <img src="/millmate-logo.png" alt="Mill Mate" style={{ height: '28px', maxWidth: '160px', objectFit: 'contain', opacity: 0.85, marginBottom: '6px' }} />
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Mill Mate • Alagiri Duplex Paper Mills</div>
+        </div>
       </div>
     </div>
   );
@@ -5184,9 +5194,35 @@ export function LoginView({ onLogin }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '80vh', justifyContent: 'center', padding: '20px' }}>
-      <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '28px', color: 'var(--primary-orange)', fontWeight: '800' }}>Alagiri</h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '6px' }}>Procurement & Logistics System</p>
+      <div style={{ textAlign: 'center', marginBottom: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div style={{
+          width: '84px',
+          height: '84px',
+          borderRadius: '20px',
+          overflow: 'hidden',
+          boxShadow: '0 8px 24px rgba(230, 126, 53, 0.22), 0 2px 8px rgba(0,0,0,0.05)',
+          marginBottom: '14px',
+          backgroundColor: '#ffffff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          border: '1px solid rgba(0,0,0,0.06)',
+          padding: '6px'
+        }}>
+          <img 
+            src="/millmate-icon.png" 
+            alt="Mill Mate Icon" 
+            style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+          />
+        </div>
+        <img 
+          src="/millmate-logo.png" 
+          alt="Mill Mate" 
+          style={{ height: '44px', maxWidth: '250px', objectFit: 'contain', marginBottom: '4px' }} 
+        />
+        <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '4px', letterSpacing: '0.3px' }}>
+          Paper Mills Procurement & Logistics
+        </p>
       </div>
 
       <div style={{ background: 'var(--card-bg)', border: '1.5px solid var(--border-color)', borderRadius: 'var(--border-radius-lg)', padding: '24px', boxShadow: 'var(--shadow-md)' }}>
@@ -5294,9 +5330,25 @@ export function ForceChangePasswordView({ state, user, onPasswordChanged }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '80vh', justifyContent: 'center', padding: '20px' }}>
-      <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', color: 'var(--primary-orange)', fontWeight: '800' }}>Setup New Password</h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '6px' }}>For security, you must update your temporary password on your first login.</p>
+      <div style={{ textAlign: 'center', marginBottom: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div style={{
+          width: '72px',
+          height: '72px',
+          borderRadius: '16px',
+          overflow: 'hidden',
+          boxShadow: '0 6px 20px rgba(230, 126, 53, 0.18)',
+          marginBottom: '12px',
+          backgroundColor: '#ffffff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '5px'
+        }}>
+          <img src="/millmate-icon.png" alt="Mill Mate" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        </div>
+        <img src="/millmate-logo.png" alt="Mill Mate" style={{ height: '32px', maxWidth: '180px', objectFit: 'contain', marginBottom: '12px' }} />
+        <h1 style={{ fontSize: '20px', color: 'var(--text-main)', fontWeight: '800' }}>Setup New Password</h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>For security, you must update your temporary password on your first login.</p>
       </div>
 
       <div style={{ background: 'var(--card-bg)', border: '1.5px solid var(--border-color)', borderRadius: 'var(--border-radius-lg)', padding: '24px', boxShadow: 'var(--shadow-md)' }}>
