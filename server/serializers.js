@@ -15,6 +15,8 @@ export const serializeUser = (row) => {
     avatarType: profile.avatarType || 'initials',
     avatarSeed: profile.avatarSeed || (profile.name || row.username),
     avatar: profile.avatar || '',
+    profileColor: profile.profileColor || profile.avatarColor || 'black',
+    avatarColor: profile.profileColor || profile.avatarColor || 'black',
     permissions: profile.permissions || {}
   };
 };
