@@ -116,13 +116,13 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
           <img 
             src="/millmate-logo.png" 
             alt="Mill Mate" 
-            style={{ height: '34px', maxWidth: '190px', objectFit: 'contain', display: 'block' }} 
+            style={{ height: '48px', maxWidth: '240px', objectFit: 'contain', display: 'block' }} 
           />
         </div>
         <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button className="bell-btn" onClick={openNotifications} style={{ cursor: 'pointer', border: 'none', background: 'none' }}>
+          <button className="bell-btn" onClick={openNotifications} style={{ cursor: 'pointer', border: 'none', background: 'none', color: '#000000' }}>
             {hasUnread && <span className="bell-badge"></span>}
-            <Icons.Bell />
+            <Icons.Bell style={{ color: '#000000' }} />
           </button>
           <button className="avatar-btn" onClick={() => navigateTo('#settings')} style={{ cursor: 'pointer', border: 'none', background: 'none', padding: 0 }}>
             <UserAvatar user={user} size={40} />
@@ -145,16 +145,13 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
           borderRadius: '16px', 
           marginBottom: '28px', 
           width: '100%', 
+          minHeight: '80px',
           boxSizing: 'border-box',
           boxShadow: 'var(--shadow-sm)'
         }}
       >
-        <div style={{ textAlign: 'left' }}>
-          <div style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-main)', lineHeight: '1.2' }}>
-            Requested<br />orders
-          </div>
-        </div>
-        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-main)' }}>{pendingCount}</div>
+        <div style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-main)' }}>Requested orders</div>
+        <div style={{ fontSize: '28px', fontWeight: '800', color: 'var(--text-main)', minHeight: '32px', display: 'flex', alignItems: 'center' }}>{pendingCount}</div>
       </div>
 
       {/* 2. Live Orders Card */}
@@ -172,6 +169,7 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
           borderRadius: '16px', 
           marginBottom: '28px', 
           width: '100%', 
+          minHeight: '80px',
           boxSizing: 'border-box',
           boxShadow: 'var(--shadow-sm)'
         }}
@@ -1295,14 +1293,25 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
           />
         </div>
 
-        <div className="form-row" style={{ marginTop: '16px' }}>
+        <div className="form-row">
           <div className="form-group">
             <label>Due Date</label>
-            <input type="date" className="form-control" value={dueDate} onChange={e => setDueDate(e.target.value)} style={{ cursor: 'pointer' }} />
+            <input 
+              type="date" 
+              className="form-control" 
+              value={dueDate} 
+              onChange={e => setDueDate(e.target.value)} 
+              style={{ cursor: 'pointer' }} 
+            />
           </div>
           <div className="form-group">
             <label>Importance</label>
-            <select className="form-control" value={priority} onChange={e => setPriority(e.target.value)} style={{ cursor: 'pointer' }}>
+            <select 
+              className="form-control" 
+              value={priority} 
+              onChange={e => setPriority(e.target.value)} 
+              style={{ cursor: 'pointer' }}
+            >
               <option value="Normal">Normal</option>
               <option value="Urgent">Urgent</option>
             </select>
@@ -2262,73 +2271,166 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                   );
 
                   const showSuggestion = !current.supplierId && matchingSupplier && !rejectedSuggestions[req.id];
+                  const activeSupplier = showSuggestion ? matchingSupplier : state.suppliers.find(s => s.id === current.supplierId);
+
+                  const supplierDetailsText = activeSupplier ? [
+                    activeSupplier.contactPerson ? `Contact: ${activeSupplier.contactPerson}` : null,
+                    activeSupplier.phoneNumber || activeSupplier.whatsappNumber ? `Phone: ${activeSupplier.phoneNumber || activeSupplier.whatsappNumber}` : null,
+                    activeSupplier.address ? activeSupplier.address : null
+                  ].filter(Boolean).join(' • ') : null;
 
                   return (
-                    <div className="form-group">
-                      <label>Supplier</label>
+                    <div className="form-group" style={{ marginBottom: '20px' }}>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>Supplier</label>
                       {showSuggestion ? (
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button 
-                            type="button" 
-                            className="btn-orange" 
-                            onClick={() => {
-                              updateCardField(req.id, "supplierId", matchingSupplier.id);
-                              state.showToast("Supplier Approved", `Supplier set to ${matchingSupplier.companyName}`, "info");
-                            }}
-                            style={{ 
-                              flex: 1.5, 
-                              padding: '10px 12px', 
-                              fontSize: '12px', 
-                              fontWeight: '700', 
-                              cursor: 'pointer', 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              justifyContent: 'center', 
-                              gap: '6px' 
-                            }}
-                          >
-                            Approve Supplier: {matchingSupplier.companyName}
-                          </button>
-                          <button 
-                            type="button" 
-                            className="btn-dark" 
-                            onClick={() => {
-                              setRejectedSuggestions(prev => ({ ...prev, [req.id]: true }));
-                              updateCardField(req.id, "supplierId", "");
-                            }}
-                            style={{ 
-                              flex: 1, 
-                              backgroundColor: '#4B5563', 
-                              marginBottom: 0, 
-                              padding: '10px 12px', 
-                              fontSize: '12px', 
-                              fontWeight: '700', 
-                              cursor: 'pointer' 
-                            }}
-                          >
-                            Reject Supplier
-                          </button>
+                        <div>
+                          {/* Supplier Name & Details */}
+                          <div style={{ marginBottom: '12px' }}>
+                            <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)' }}>
+                              {matchingSupplier.companyName}
+                            </div>
+                            {supplierDetailsText && (
+                              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '3px', lineHeight: '1.4' }}>
+                                {supplierDetailsText}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Matching Pair Buttons: Approve Supplier | Reject Supplier */}
+                          <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                updateCardField(req.id, "supplierId", matchingSupplier.id);
+                                state.showToast("Supplier Approved", `Supplier set to ${matchingSupplier.companyName}`, "info");
+                              }}
+                              style={{ 
+                                flex: 1, 
+                                height: '44px',
+                                minHeight: '44px',
+                                padding: '8px 12px', 
+                                fontSize: '12px', 
+                                fontWeight: '700', 
+                                borderRadius: '12px',
+                                border: 'none',
+                                backgroundColor: 'var(--primary-orange)',
+                                color: '#ffffff',
+                                cursor: 'pointer', 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center', 
+                                textAlign: 'center',
+                                boxSizing: 'border-box',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              Approve Supplier: {matchingSupplier.companyName}
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                setRejectedSuggestions(prev => ({ ...prev, [req.id]: true }));
+                                updateCardField(req.id, "supplierId", "");
+                              }}
+                              style={{ 
+                                flex: 1, 
+                                height: '44px',
+                                minHeight: '44px',
+                                padding: '8px 12px', 
+                                fontSize: '12px', 
+                                fontWeight: '700', 
+                                borderRadius: '12px',
+                                border: 'none',
+                                backgroundColor: '#4B5563', 
+                                color: '#ffffff',
+                                cursor: 'pointer', 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center', 
+                                textAlign: 'center',
+                                boxSizing: 'border-box',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              Reject Supplier
+                            </button>
+                          </div>
                         </div>
                       ) : (
-                        <select 
-                          className="form-control" 
-                          value={current.supplierId || ""} 
-                          onChange={e => updateCardField(req.id, "supplierId", e.target.value)}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          <option value="">Choose Supplier</option>
-                          {state.suppliers.map(s => (
-                            <option key={s.id} value={s.id}>{s.companyName}</option>
-                          ))}
-                        </select>
+                        <div>
+                          <select 
+                            className="form-control" 
+                            value={current.supplierId || ""} 
+                            onChange={e => updateCardField(req.id, "supplierId", e.target.value)}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <option value="">Choose Supplier</option>
+                            {state.suppliers.map(s => (
+                              <option key={s.id} value={s.id}>{s.companyName}</option>
+                            ))}
+                          </select>
+                          {supplierDetailsText && (
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: '1.4' }}>
+                              {supplierDetailsText}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   );
                 })()}
 
-                <div className="card-actions-row" style={{ marginTop: '20px' }}>
-                  <button className="btn-dark" style={{ backgroundColor: 'var(--status-red)', marginBottom: 0, padding: '10px', cursor: 'pointer' }} onClick={() => handleReject(req.id)}>Reject</button>
-                  <button className="btn-generate-po" style={{ flex: 1.5 }} onClick={() => handleApprove(req.id)}>Generate PO</button>
+                {/* Bottom Action Buttons: Stacked Vertically */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '24px', width: '100%' }}>
+                  <button 
+                    type="button"
+                    className="btn-dark" 
+                    style={{ 
+                      width: '100%', 
+                      height: '48px', 
+                      backgroundColor: 'var(--status-red, #FC0000)', 
+                      color: '#ffffff',
+                      fontSize: '15px',
+                      fontWeight: '700',
+                      borderRadius: '16px',
+                      border: 'none',
+                      marginBottom: 0, 
+                      padding: '12px', 
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 4px 12px rgba(252, 0, 0, 0.15)',
+                      boxSizing: 'border-box'
+                    }} 
+                    onClick={() => handleReject(req.id)}
+                  >
+                    Reject
+                  </button>
+                  <button 
+                    type="button"
+                    className="btn-generate-po" 
+                    style={{ 
+                      width: '100%', 
+                      height: '48px', 
+                      backgroundColor: '#1B1B1F', 
+                      color: '#ffffff',
+                      fontSize: '15px',
+                      fontWeight: '700',
+                      borderRadius: '16px',
+                      border: 'none',
+                      padding: '12px', 
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.18)',
+                      boxSizing: 'border-box'
+                    }} 
+                    onClick={() => handleApprove(req.id)}
+                  >
+                    Generate PO
+                  </button>
                 </div>
               </div>
             );
@@ -4279,16 +4381,25 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
   };
 
   const handleSaveAvatar = async (updatedUser) => {
-    await apiService.saveUser(updatedUser);
-    state.setCurrentUser(updatedUser);
-    state.showToast("Avatar Settings Saved", "Your avatar customization was updated successfully.", "success");
+    try {
+      const saved = await apiService.saveUser(updatedUser);
+      const finalUser = saved && saved.id ? saved : updatedUser;
+      state.setCurrentUser(finalUser);
+      localStorage.setItem("pms_current_user", JSON.stringify(finalUser));
+      state.showToast("Profile Settings Saved", "Your profile icon color was updated successfully.", "success");
+    } catch (err) {
+      console.error("Failed to save profile icon color:", err);
+      state.setCurrentUser(updatedUser);
+      localStorage.setItem("pms_current_user", JSON.stringify(updatedUser));
+      state.showToast("Profile Settings Saved", "Profile icon color saved.", "success");
+    }
     closeModal();
   };
 
   const openAvatarModal = () => {
     setModalContent(
       <AvatarEditor user={user} onSave={handleSaveAvatar} onClose={closeModal} />,
-      "Customize Avatar"
+      "Customize Profile Icon"
     );
     openModal();
   };
@@ -4341,16 +4452,6 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
             </div>
           )}
 
-          {isMainAdmin && (
-            <div className="settings-item" onClick={() => navigateTo('#settings/branding')} style={{ cursor: 'pointer' }}>
-              <div className="settings-item-left">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ color: 'var(--primary-orange)' }}><circle cx="13.5" cy="6.5" r=".5" /><circle cx="17.5" cy="10.5" r=".5" /><circle cx="8.5" cy="7.5" r=".5" /><circle cx="6.5" cy="12.5" r=".5" /><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2Z" /></svg>
-                <span className="settings-title">Branding & API Settings</span>
-              </div>
-              <Icons.ChevronRight />
-            </div>
-          )}
-
           {user.role !== "Employee" && (
             <div className="settings-item" onClick={() => navigateTo('#settings/notifications')} style={{ cursor: 'pointer' }}>
               <div className="settings-item-left">
@@ -4388,9 +4489,15 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
         </div>
 
         {/* Mill Mate App Brand Info */}
-        <div style={{ marginTop: '36px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: '20px' }}>
-          <img src="/millmate-logo.png" alt="Mill Mate" style={{ height: '28px', maxWidth: '160px', objectFit: 'contain', opacity: 0.85, marginBottom: '6px' }} />
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Mill Mate • Alagiri Duplex Paper Mills</div>
+        <div style={{ marginTop: '36px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', paddingBottom: '20px' }}>
+          <img 
+            src="/millmate-logo.png" 
+            alt="Mill Mate" 
+            style={{ height: '30px', maxWidth: '170px', objectFit: 'contain', opacity: 0.85, marginBottom: '6px', display: 'block', margin: '0 auto 6px auto' }} 
+          />
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', width: '100%' }}>
+            Mill Mate • Alagiri Duplex Paper Mills
+          </div>
         </div>
       </div>
     </div>
@@ -5915,63 +6022,79 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
             return (
               <div key={u.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 'var(--border-radius-md)', padding: '16px', textAlign: 'left', opacity: u.disabled ? 0.6 : 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <UserAvatar user={u} size={40} />
-                      <div>
-                        <div style={{ fontWeight: '800', fontSize: '14px' }}>{u.name}</div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>@{u.username} • {u.role} ({u.department || 'N/A'})</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    {/* Left Side: Profile Icon + Name + Details */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+                      <UserAvatar user={u} size={42} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontWeight: '800', fontSize: '15px', color: 'var(--text-main)', lineHeight: '1.2' }}>
+                          {u.name}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px', lineHeight: '1.3' }}>
+                          @{u.username} • {u.role}{u.department ? ` (${u.department})` : ''}
+                        </div>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', flexShrink: 0, alignItems: 'center' }}>
-                      <button 
-                        className="btn-outlined-icon-dark"
-                        onClick={() => handleEdit(u)} 
-                        style={{ 
-                          backgroundColor: 'transparent', 
-                          color: 'var(--dark-charcoal)', 
-                          border: '1px solid var(--dark-charcoal)', 
-                          borderRadius: '6px', 
-                          padding: '4px 8px', 
-                          fontSize: '11px', 
-                          fontWeight: '700', 
-                          cursor: 'pointer', 
-                          display: 'inline-flex', 
-                          alignItems: 'center', 
-                          gap: '4px', 
-                          height: '26px', 
-                          transition: 'all 0.2s' 
-                        }}
-                        title="Edit User Details"
-                      >
-                        <Icons.Edit />
-                        <span>Edit</span>
-                      </button>
-                      {u.role !== "Main Admin" && (
+
+                    {/* Right Side: 2-Row Action Buttons */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'stretch', flexShrink: 0, minWidth: '136px' }}>
+                      {/* Row 1: Disable | Edit */}
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                        {u.role !== "Main Admin" && (
+                          <button 
+                            className={u.disabled ? "btn-outlined-icon-power-green" : "btn-outlined-icon-power-red"}
+                            onClick={() => handleToggleDisable(u)} 
+                            style={{ 
+                              backgroundColor: 'transparent', 
+                              color: u.disabled ? 'var(--status-green)' : 'var(--status-red)', 
+                              border: u.disabled ? '1px solid var(--status-green)' : '1px solid var(--status-red)', 
+                              borderRadius: '6px', 
+                              padding: '4px 6px', 
+                              fontSize: '11px', 
+                              fontWeight: '700', 
+                              cursor: 'pointer', 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center',
+                              gap: '3px', 
+                              height: '26px', 
+                              flex: 1,
+                              transition: 'all 0.2s' 
+                            }}
+                            title={u.disabled ? "Enable Account" : "Disable Account"}
+                          >
+                            <Icons.Power />
+                            <span>{u.disabled ? 'Enable' : 'Disable'}</span>
+                          </button>
+                        )}
                         <button 
-                          className={u.disabled ? "btn-outlined-icon-power-green" : "btn-outlined-icon-power-red"}
-                          onClick={() => handleToggleDisable(u)} 
+                          className="btn-outlined-icon-dark"
+                          onClick={() => handleEdit(u)} 
                           style={{ 
                             backgroundColor: 'transparent', 
-                            color: u.disabled ? 'var(--status-green)' : 'var(--status-red)', 
-                            border: u.disabled ? '1px solid var(--status-green)' : '1px solid var(--status-red)', 
+                            color: 'var(--dark-charcoal)', 
+                            border: '1px solid var(--dark-charcoal)', 
                             borderRadius: '6px', 
-                            padding: '4px 8px', 
+                            padding: '4px 6px', 
                             fontSize: '11px', 
                             fontWeight: '700', 
                             cursor: 'pointer', 
                             display: 'inline-flex', 
                             alignItems: 'center', 
-                            gap: '4px', 
+                            justifyContent: 'center',
+                            gap: '3px', 
                             height: '26px', 
+                            flex: 1,
                             transition: 'all 0.2s' 
                           }}
-                          title={u.disabled ? "Enable Account" : "Disable Account"}
+                          title="Edit User Details"
                         >
-                          <Icons.Power />
-                          <span>{u.disabled ? 'Enable' : 'Disable'}</span>
+                          <Icons.Edit />
+                          <span>Edit</span>
                         </button>
-                      )}
+                      </div>
+
+                      {/* Row 2: Reset Password (Full Width) */}
                       <button 
                         onClick={() => handleResetPassword(u)} 
                         style={{ 
@@ -5979,7 +6102,7 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
                           color: '#FFFFFF', 
                           border: 'none', 
                           borderRadius: '6px', 
-                          padding: '4px 12px', 
+                          padding: '4px 8px', 
                           fontSize: '11px', 
                           fontWeight: '700', 
                           cursor: 'pointer', 
@@ -5987,8 +6110,10 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
                           alignItems: 'center', 
                           justifyContent: 'center',
                           height: '26px', 
+                          width: '100%',
                           boxSizing: 'border-box',
-                          transition: 'all 0.2s' 
+                          transition: 'all 0.2s',
+                          whiteSpace: 'nowrap'
                         }}
                         title="Reset Password"
                         onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#0b5ed7'}
@@ -6023,23 +6148,34 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
 export function UserAvatar({ user, size = 40 }) {
   if (!user) return null;
   
-  if (user.avatar && user.avatar.startsWith("data:")) {
+  if (user.avatar && user.avatar.startsWith("data:image")) {
     return (
       <img src={user.avatar} style={{ width: `${size}px`, height: `${size}px`, borderRadius: '50%', objectFit: 'cover', border: '1.5px solid var(--border-color)', flexShrink: 0 }} alt="Avatar" />
     );
   }
 
   // Get initials
-  const initials = user.name ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : "U";
+  const initials = user.name ? user.name.trim().split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase() : (user.username ? user.username.slice(0, 1).toUpperCase() : "U");
 
-  // Color code fallback
-  let bgColor = "#0d9488"; // default employee
-  if (user.role === "Main Admin") {
-    bgColor = "#7c3aed"; // purple
-  } else if (user.role === "Sub Admin") {
-    bgColor = "#4F46E5"; // indigo
-  } else if (user.role === "Employee") {
-    bgColor = "#0d9488"; // teal
+  // Determine profile color choice: "black", "orange", or "white"
+  const colorKey = (user.profileColor || user.avatarColor || "black").toLowerCase();
+
+  let bgColor = "#232120"; // default black
+  let textColor = "#ffffff";
+  let borderColor = "1.5px solid rgba(0,0,0,0.15)";
+
+  if (colorKey === "orange" || colorKey === "#e67e35" || colorKey === "#ea580c") {
+    bgColor = "var(--primary-orange, #e67e35)";
+    textColor = "#ffffff";
+    borderColor = "1.5px solid rgba(0,0,0,0.1)";
+  } else if (colorKey === "white" || colorKey === "#ffffff") {
+    bgColor = "#ffffff";
+    textColor = "#232120";
+    borderColor = "1.5px solid #d1d5db";
+  } else {
+    bgColor = "#232120";
+    textColor = "#ffffff";
+    borderColor = "1.5px solid rgba(0,0,0,0.2)";
   }
 
   return (
@@ -6048,15 +6184,16 @@ export function UserAvatar({ user, size = 40 }) {
       height: `${size}px`,
       borderRadius: '50%',
       backgroundColor: bgColor,
-      color: '#ffffff',
+      color: textColor,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      fontWeight: 'bold',
-      fontSize: `${size * 0.4}px`,
-      border: '1.5px solid var(--border-color)',
+      fontWeight: '700',
+      fontSize: `${Math.round(size * 0.42)}px`,
+      border: borderColor,
       userSelect: 'none',
-      flexShrink: 0
+      flexShrink: 0,
+      boxSizing: 'border-box'
     }}>
       {initials}
     </div>
@@ -6064,65 +6201,173 @@ export function UserAvatar({ user, size = 40 }) {
 }
 
 // ----------------------------------------------------
-// 16. AVATAR EDITOR DRAWER COMPONENT
+// 16. AVATAR / PROFILE COLOR EDITOR DRAWER COMPONENT
 // ----------------------------------------------------
 export function AvatarEditor({ user, onSave, onClose }) {
-  const [avatar, setAvatar] = useState(user.avatar || "");
-  
-  const presets = [
-    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='%23ea580c'/><text x='50' y='60' font-size='30' text-anchor='middle' fill='white'>🤖</text></svg>",
-    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='%230d9488'/><text x='50' y='60' font-size='30' text-anchor='middle' fill='white'>🦊</text></svg>",
-    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='%232563eb'/><text x='50' y='60' font-size='30' text-anchor='middle' fill='white'>🦉</text></svg>",
-    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='%237c3aed'/><text x='50' y='60' font-size='30' text-anchor='middle' fill='white'>🐯</text></svg>"
-  ];
+  const [selectedColor, setSelectedColor] = useState(
+    user.profileColor || user.avatarColor || "black"
+  );
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setAvatar(reader.result);
-    };
-    reader.readAsDataURL(file);
-  };
+  const colorOptions = [
+    {
+      id: "black",
+      name: "Black",
+      bg: "#232120",
+      text: "#ffffff",
+      border: "1.5px solid #232120"
+    },
+    {
+      id: "orange",
+      name: "Orange",
+      bg: "#e67e35",
+      text: "#ffffff",
+      border: "1.5px solid #e67e35"
+    },
+    {
+      id: "white",
+      name: "White",
+      bg: "#ffffff",
+      text: "#232120",
+      border: "1.5px solid #d1d5db"
+    }
+  ];
 
   const handleSave = () => {
     onSave({
       ...user,
-      avatar
+      profileColor: selectedColor,
+      avatarColor: selectedColor,
+      avatar: "" // clear old external avatar url to use chosen color
     });
+  };
+
+  const previewUser = {
+    ...user,
+    profileColor: selectedColor,
+    avatarColor: selectedColor,
+    avatar: ""
   };
 
   return (
     <div style={{ textAlign: 'left' }}>
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-        <UserAvatar user={{ ...user, avatar }} size={80} />
-      </div>
-
-      <div className="form-group">
-        <label>Upload Custom Picture</label>
-        <div className="lr-upload-box" style={{ cursor: 'pointer' }}>
-          <div className="lr-text-primary">Choose Photo File</div>
-          <input type="file" accept="image/*" onChange={handleFileUpload} style={{ cursor: 'pointer' }} />
-          <span className="badge-view-lr">Browse</span>
+      {/* Live Profile Icon Preview */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '16px 0 20px', borderBottom: '1px solid var(--border-color)', marginBottom: '20px' }}>
+        <div style={{ position: 'relative' }}>
+          <UserAvatar user={previewUser} size={80} />
+        </div>
+        <div style={{ marginTop: '12px', textAlign: 'center' }}>
+          <div style={{ fontWeight: '800', fontSize: '16px', color: 'var(--text-main)' }}>{user.name || "User"}</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{user.role || "Role"} • Profile Icon Preview</div>
         </div>
       </div>
 
-      <div className="form-group" style={{ marginTop: '16px' }}>
-        <label>Preset Avatars</label>
-        <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-          {presets.map((p, idx) => (
-            <img key={idx} src={p} style={{ width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', border: avatar === p ? '3px solid var(--primary-orange)' : '1px solid var(--border-color)', padding: '2px' }} onClick={() => setAvatar(p)} alt="Preset" />
-          ))}
-          <button type="button" className="btn-dark" style={{ width: '44px', height: '44px', borderRadius: '50%', padding: 0, fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#e5e7eb', border: '1px solid #d1d5db', color: '#374151', cursor: 'pointer' }} onClick={() => setAvatar("")}>
-            Reset
-          </button>
+      {/* Color Selection Section */}
+      <div className="form-group" style={{ marginBottom: '20px' }}>
+        <label style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '8px', display: 'block' }}>
+          Select Profile Icon Color
+        </label>
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: '1.4' }}>
+          Choose an app brand color for your profile icon. This color will be applied consistently across the application.
+        </p>
+
+        {/* 3 Selectable Colors: Black, Orange, White */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+          {colorOptions.map((opt) => {
+            const isSelected = (selectedColor || "").toLowerCase() === opt.id.toLowerCase();
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setSelectedColor(opt.id)}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '14px 8px',
+                  borderRadius: '12px',
+                  backgroundColor: isSelected ? 'rgba(230, 126, 53, 0.06)' : 'var(--card-bg)',
+                  border: isSelected ? '2px solid var(--primary-orange)' : '1.5px solid var(--border-color)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  position: 'relative',
+                  outline: 'none',
+                  boxShadow: isSelected ? '0 2px 8px rgba(230, 126, 53, 0.18)' : 'none'
+                }}
+              >
+                {/* Visual Swatch Circle */}
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '50%',
+                    backgroundColor: opt.bg,
+                    border: opt.border,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: '8px',
+                    boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
+                    position: 'relative'
+                  }}
+                >
+                  {isSelected && (
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke={opt.text} strokeWidth="3">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </div>
+
+                {/* Color Label */}
+                <span
+                  style={{
+                    fontSize: '13px',
+                    fontWeight: isSelected ? '800' : '600',
+                    color: isSelected ? 'var(--primary-orange)' : 'var(--text-main)'
+                  }}
+                >
+                  {opt.name}
+                </span>
+
+                {/* Selected Pill Badge */}
+                {isSelected && (
+                  <span
+                    style={{
+                      marginTop: '4px',
+                      fontSize: '10px',
+                      fontWeight: '700',
+                      color: 'var(--primary-orange)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}
+                  >
+                    Selected
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
+      {/* Action Buttons */}
       <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-        <button className="btn-dark" style={{ flex: 1, backgroundColor: '#4B5563', marginBottom: 0, cursor: 'pointer' }} onClick={onClose}>Cancel</button>
-        <button className="btn-orange" style={{ flex: 1.5, cursor: 'pointer' }} onClick={handleSave}>Save Changes</button>
+        <button
+          type="button"
+          className="btn-dark"
+          style={{ flex: 1, backgroundColor: '#4B5563', marginBottom: 0, cursor: 'pointer' }}
+          onClick={onClose}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn-orange"
+          style={{ flex: 1.5, cursor: 'pointer' }}
+          onClick={handleSave}
+        >
+          Save Changes
+        </button>
       </div>
     </div>
   );

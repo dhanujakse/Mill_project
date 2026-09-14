@@ -574,6 +574,7 @@ body {
   position: relative;
   cursor: pointer;
   transition: all 0.2s ease;
+  color: #000000;
 }
 
 .bell-badge {
@@ -590,11 +591,15 @@ body {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 2px solid var(--primary-orange);
-  background-color: var(--primary-orange);
+  border: none;
+  background: transparent;
   overflow: hidden;
   cursor: pointer;
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
 
 .avatar-btn img {
@@ -926,8 +931,27 @@ body {
   box-sizing: border-box;
 }
 
-input.form-control, select.form-control {
+input.form-control, select.form-control, input[type="date"].form-control {
   height: 48px;
+  min-height: 48px;
+  max-height: 48px;
+  box-sizing: border-box;
+}
+
+input[type="date"].form-control,
+input[type="date"] {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+  line-height: normal;
+  margin: 0;
+  padding: 0;
 }
 
 select.form-control {

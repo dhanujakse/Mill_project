@@ -47,14 +47,21 @@ router.post('/', requireRole('Main Admin'), async (req, res) => {
   res.status(201).json({ tempPassword });
 });
 
-router.put('/:id', requireRole('Main Admin'), async (req, res) => {
+router.put('/:id', async (req, res) => {
   const row = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'User not found' });
+
+  const isAdmin = req.user?.role === 'Main Admin';
+  const isSelf = req.user?.id === req.params.id;
+
+  if (!isAdmin && !isSelf) {
+    return res.status(403).json({ error: 'Forbidden: You can only edit your own profile.' });
+  }
 
   const body = req.body || {};
   const currentProfile = JSON.parse(row.profile || '{}');
 
-  if (row.role === 'Main Admin' && body.disabled) {
+  if (isAdmin && row.role === 'Main Admin' && body.disabled) {
     return res.status(400).json({ error: 'Main Admin cannot be disabled.' });
   }
 
@@ -72,25 +79,30 @@ router.put('/:id', requireRole('Main Admin'), async (req, res) => {
     if (dup) return res.status(409).json({ error: 'Email address is already in use by another user.' });
   }
 
+  const chosenColor = body.profileColor || body.avatarColor || currentProfile.profileColor || currentProfile.avatarColor || 'black';
+
   const nextProfile = {
     ...currentProfile,
     name: body.name !== undefined ? body.name.trim() : currentProfile.name,
     email: body.email !== undefined ? body.email.trim() : currentProfile.email,
     phone: body.phone !== undefined ? body.phone.trim() : currentProfile.phone,
-    department: body.department !== undefined ? body.department : currentProfile.department,
-    permissions: body.role !== undefined
+    department: (isAdmin && body.department !== undefined) ? body.department : currentProfile.department,
+    avatar: body.avatar !== undefined ? body.avatar : (currentProfile.avatar || ''),
+    profileColor: chosenColor,
+    avatarColor: chosenColor,
+    permissions: (isAdmin && body.role !== undefined)
       ? (body.role === 'Sub Admin' ? (body.permissions || currentProfile.permissions || {}) : {})
       : currentProfile.permissions
   };
 
-  const nextRole = body.role !== undefined ? body.role : row.role;
-  const nextEnabled = body.disabled !== undefined ? (body.disabled ? 0 : 1) : row.enabled;
+  const nextRole = (isAdmin && body.role !== undefined) ? body.role : row.role;
+  const nextEnabled = (isAdmin && body.disabled !== undefined) ? (body.disabled ? 0 : 1) : row.enabled;
 
   let nextPasswordHash = row.password_hash;
   let nextMustChange = row.must_change_password;
   // The client never sends a raw passwordHash here - only ever a plaintext
   // newPassword when an admin is actually setting one, which the server hashes.
-  if (body.newPassword && body.newPassword.trim()) {
+  if (isAdmin && body.newPassword && body.newPassword.trim()) {
     nextPasswordHash = await bcrypt.hash(body.newPassword.trim(), 10);
     nextMustChange = 1;
   }
