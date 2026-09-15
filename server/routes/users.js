@@ -79,7 +79,13 @@ router.put('/:id', async (req, res) => {
     if (dup) return res.status(409).json({ error: 'Email address is already in use by another user.' });
   }
 
-  const chosenColor = body.profileColor || body.avatarColor || currentProfile.profileColor || currentProfile.avatarColor || 'black';
+  const chosenColor = (
+    body.profileColor !== undefined && body.profileColor !== null && body.profileColor !== ''
+      ? body.profileColor
+      : (body.avatarColor !== undefined && body.avatarColor !== null && body.avatarColor !== ''
+          ? body.avatarColor
+          : (currentProfile.profileColor || currentProfile.avatarColor || 'black'))
+  ).toLowerCase();
 
   const nextProfile = {
     ...currentProfile,

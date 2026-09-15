@@ -6256,10 +6256,24 @@ export function UserAvatar({ user, size = 40 }) {
 // 16. AVATAR / PROFILE COLOR EDITOR DRAWER COMPONENT
 // ----------------------------------------------------
 export function AvatarEditor({ user, onSave, onClose }) {
-  const [avatar, setAvatar] = useState(user.avatar || "");
-  const [selectedColor, setSelectedColor] = useState(
-    user.avatarColor || user.profileColor || "orange"
-  );
+  const initialColor = (user.profileColor || user.avatarColor || "black").toLowerCase();
+  const [selectedColor, setSelectedColor] = useState(initialColor);
+
+  const [selectedIcon, setSelectedIcon] = useState(() => {
+    if (user.avatar && typeof user.avatar === 'string' && user.avatar.startsWith('data:image/svg')) {
+      for (const icon of ["🤖", "🦊", "🦉", "🐯", "👷"]) {
+        if (user.avatar.includes(icon)) return icon;
+      }
+    }
+    return null;
+  });
+
+  const [customPhoto, setCustomPhoto] = useState(() => {
+    if (user.avatar && typeof user.avatar === 'string' && !user.avatar.startsWith('data:image/svg') && !user.avatar.includes('<svg')) {
+      return user.avatar;
+    }
+    return "";
+  });
 
   const colorOptions = [
     {
@@ -6288,26 +6302,42 @@ export function AvatarEditor({ user, onSave, onClose }) {
   const presetIcons = ["🤖", "🦊", "🦉", "🐯", "👷"];
 
   const buildPresetSvg = (icon, color) => {
-    const c = (color || "orange").toLowerCase();
+    const c = (color || "black").toLowerCase();
+    let fill = "%23232120"; // black
+    let textColor = "%23ffffff";
+    let strokeAttr = "";
+
     if (c === "orange" || c === "#ea580c" || c === "#e67e35") {
-      return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='%23ea580c'/><text x='50' y='60' font-size='30' text-anchor='middle' fill='white'>${icon}</text></svg>`;
+      fill = "%23ea580c";
+      textColor = "%23ffffff";
+    } else if (c === "white" || c === "#ffffff") {
+      fill = "%23ffffff";
+      textColor = "%23232120";
+      strokeAttr = " stroke='%23d1d5db' stroke-width='4'";
+    } else {
+      fill = "%23232120";
+      textColor = "%23ffffff";
     }
-    if (c === "white" || c === "#ffffff") {
-      return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='%23ffffff' stroke='%23d1d5db' stroke-width='4'/><text x='50' y='60' font-size='30' text-anchor='middle'>${icon}</text></svg>`;
-    }
-    // Black
-    return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='%23232120'/><text x='50' y='60' font-size='30' text-anchor='middle' fill='white'>${icon}</text></svg>`;
+
+    return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='${fill}'${strokeAttr}/><text x='50' y='60' font-size='30' text-anchor='middle' fill='${textColor}'>${icon}</text></svg>`;
   };
+
+  const currentAvatar = customPhoto
+    ? customPhoto
+    : (selectedIcon ? buildPresetSvg(selectedIcon, selectedColor) : "");
 
   const handleColorChange = (newColor) => {
     setSelectedColor(newColor);
-    // If the current avatar is a preset SVG, update it to match the new color
-    if (avatar && avatar.includes("<svg") && avatar.includes("<text")) {
-      const match = avatar.match(/>([^<]+)<\/text>/);
-      if (match && match[1]) {
-        setAvatar(buildPresetSvg(match[1], newColor));
-      }
-    }
+  };
+
+  const handleSelectPreset = (icon) => {
+    setCustomPhoto("");
+    setSelectedIcon(icon);
+  };
+
+  const handleReset = () => {
+    setCustomPhoto("");
+    setSelectedIcon(null);
   };
 
   const handleFileUpload = (e) => {
@@ -6315,15 +6345,20 @@ export function AvatarEditor({ user, onSave, onClose }) {
     if (!file) return;
     const reader = new FileReader();
     reader.onloadend = () => {
-      setAvatar(reader.result);
+      setSelectedIcon(null);
+      setCustomPhoto(reader.result);
     };
     reader.readAsDataURL(file);
   };
 
   const handleSave = () => {
+    const finalAvatar = customPhoto
+      ? customPhoto
+      : (selectedIcon ? buildPresetSvg(selectedIcon, selectedColor) : "");
+
     onSave({
       ...user,
-      avatar,
+      avatar: finalAvatar,
       avatarColor: selectedColor,
       profileColor: selectedColor
     });
@@ -6331,7 +6366,7 @@ export function AvatarEditor({ user, onSave, onClose }) {
 
   const previewUser = {
     ...user,
-    avatar,
+    avatar: currentAvatar,
     avatarColor: selectedColor,
     profileColor: selectedColor
   };
@@ -6446,7 +6481,7 @@ export function AvatarEditor({ user, onSave, onClose }) {
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginTop: '6px' }}>
           {presetIcons.map((icon, idx) => {
             const presetUrl = buildPresetSvg(icon, selectedColor);
-            const isSelected = avatar === presetUrl || (avatar && avatar.includes(icon));
+            const isSelected = selectedIcon === icon;
             return (
               <img
                 key={idx}
@@ -6462,7 +6497,7 @@ export function AvatarEditor({ user, onSave, onClose }) {
                   transition: 'all 0.2s ease',
                   backgroundColor: 'var(--card-bg)'
                 }}
-                onClick={() => setAvatar(buildPresetSvg(icon, selectedColor))}
+                onClick={() => handleSelectPreset(icon)}
                 alt={`Preset ${icon}`}
               />
             );
@@ -6485,7 +6520,7 @@ export function AvatarEditor({ user, onSave, onClose }) {
               cursor: 'pointer',
               marginBottom: 0
             }}
-            onClick={() => setAvatar("")}
+            onClick={handleReset}
           >
             Reset
           </button>
