@@ -178,7 +178,7 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#FC0000', color: '#ffffff', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="No Response">{noResponseCount}</span>
           <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#F28C28', color: '#ffffff', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="Acknowledged">{acknowledgedCount}</span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#2563EB', color: '#ffffff', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="Booked">{bookedCount}</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1B1B1F', color: '#ffffff', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="Booked">{bookedCount}</span>
           {receivedCount > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#22C55E', color: '#ffffff', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="Received">{receivedCount}</span>}
           {delayedCount > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#F3C82A', color: '#000000', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="Delayed">{delayedCount}</span>}
         </div>
@@ -291,7 +291,7 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
               style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 24px', cursor: 'pointer', borderBottom: '1.5px solid #f6f5f4' }}
             >
               <span style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#2563EB' }}></span>
+                <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#1B1B1F' }}></span>
                 Booked
               </span>
               <span style={{ background: '#f5efe9', color: '#2a2726', fontWeight: '800', fontSize: '13px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%' }}>
@@ -400,6 +400,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
   const [priority, setPriority] = useState("Normal");
   const [attachedFile, setAttachedFile] = useState(null);
   const [attachedFileName, setAttachedFileName] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const addProduct = () => {
     setProducts(prev => [
@@ -746,6 +747,8 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
   const isEmployee = user.role === "Employee";
 
   const handleSubmit = async () => {
+    if (isSubmitting) return;
+
     const newErrors = {};
     products.forEach((prod, index) => {
       if (!prod.productName.trim()) {
@@ -793,154 +796,179 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       return;
     }
 
-    const items = products.map(p => ({
-      productName: p.productName.trim(),
-      qty: parseFloat(p.qty) || 1,
-      units: p.units,
-      description: (p.description || "").trim()
-    }));
+    setIsSubmitting(true);
 
-    const primaryProduct = items[0] || { productName: "", qty: 1, units: "Pieces", description: "" };
+    try {
+      const items = products.map(p => ({
+        productName: p.productName.trim(),
+        qty: parseFloat(p.qty) || 1,
+        units: p.units,
+        description: (p.description || "").trim()
+      }));
 
-    if (cloneId) {
-      const original = state.requests.find(r => r.id === cloneId);
-      if (original) {
-        const fields = [
-          { name: "Product Name", prev: original.productName, current: primaryProduct.productName, key: "productName" },
-          { name: "Quantity", prev: original.qty, current: primaryProduct.qty, key: "qty" },
-          { name: "Units", prev: original.units, current: primaryProduct.units, key: "units" },
-          { name: "Priority", prev: original.priority, current: priority, key: "priority" },
-          { name: "Bill To", prev: original.billTo, current: billTo, key: "billTo" },
-          { name: "Ship To", prev: original.shipTo, current: shipTo, key: "shipTo" },
-          { name: "Mode of Transport", prev: original.transportMode, current: transportMode, key: "transportMode" },
-          { name: "Due Date", prev: original.dueDate, current: dueDate, key: "dueDate" },
-          { name: "Suggested Supplier", prev: original.suggestedSupplier, current: suggestedSupplier, key: "suggestedSupplier" },
-          { name: "Description", prev: original.description, current: primaryProduct.description, key: "description" },
-          { name: "Supplier Phone", prev: original.suggestedSupplierPhone, current: suggestedSupplierPhone, key: "suggestedSupplierPhone" },
-          { name: "Supplier Email", prev: original.suggestedSupplierEmail, current: suggestedSupplierEmail, key: "suggestedSupplierEmail" },
-          { name: "Supplier Remarks", prev: original.suggestedSupplierRemarks, current: suggestedSupplierRemarks, key: "suggestedSupplierRemarks" },
-          { name: "Attachment File", prev: original.imageName, current: attachedFileName, key: "imageName" }
-        ];
+      const primaryProduct = items[0] || { productName: "", qty: 1, units: "Pieces", description: "" };
 
-        const now = new Date();
-        const editHistoryEntries = [];
-        
-        fields.forEach(f => {
-          const prevVal = f.prev !== undefined && f.prev !== null ? String(f.prev).trim() : "";
-          const currVal = f.current !== undefined && f.current !== null ? String(f.current).trim() : "";
+      if (cloneId) {
+        const original = state.requests.find(r => r.id === cloneId);
+        if (original) {
+          const fields = [
+            { name: "Product Name", prev: original.productName, current: primaryProduct.productName, key: "productName" },
+            { name: "Quantity", prev: original.qty, current: primaryProduct.qty, key: "qty" },
+            { name: "Units", prev: original.units, current: primaryProduct.units, key: "units" },
+            { name: "Priority", prev: original.priority, current: priority, key: "priority" },
+            { name: "Bill To", prev: original.billTo, current: billTo, key: "billTo" },
+            { name: "Ship To", prev: original.shipTo, current: shipTo, key: "shipTo" },
+            { name: "Mode of Transport", prev: original.transportMode, current: transportMode, key: "transportMode" },
+            { name: "Due Date", prev: original.dueDate, current: dueDate, key: "dueDate" },
+            { name: "Suggested Supplier", prev: original.suggestedSupplier, current: suggestedSupplier, key: "suggestedSupplier" },
+            { name: "Description", prev: original.description, current: primaryProduct.description, key: "description" },
+            { name: "Supplier Phone", prev: original.suggestedSupplierPhone, current: suggestedSupplierPhone, key: "suggestedSupplierPhone" },
+            { name: "Supplier Email", prev: original.suggestedSupplierEmail, current: suggestedSupplierEmail, key: "suggestedSupplierEmail" },
+            { name: "Supplier Remarks", prev: original.suggestedSupplierRemarks, current: suggestedSupplierRemarks, key: "suggestedSupplierRemarks" },
+            { name: "Attachment File", prev: original.imageName, current: attachedFileName, key: "imageName" }
+          ];
+
+          const now = new Date();
+          const editHistoryEntries = [];
           
-          if (prevVal !== currVal) {
-            editHistoryEntries.push({
-              status: original.status,
-              updatedBy: user.name,
-              role: user.role,
-              timestamp: now.toISOString(),
-              remarks: `Field [${f.name}] modified from "${f.prev || 'None'}" to "${f.current || 'None'}".`
-            });
+          fields.forEach(f => {
+            const prevVal = f.prev !== undefined && f.prev !== null ? String(f.prev).trim() : "";
+            const currVal = f.current !== undefined && f.current !== null ? String(f.current).trim() : "";
             
-            state.logEvent(
-              "Edit Request Field", 
-              String(f.prev || 'None'), 
-              String(f.current || 'None'), 
-              `User changed request ${original.id} [${f.name}]: ${f.prev || 'None'} -> ${f.current || 'None'}`
+            if (prevVal !== currVal) {
+              editHistoryEntries.push({
+                status: original.status,
+                updatedBy: user.name,
+                role: user.role,
+                timestamp: now.toISOString(),
+                remarks: `Field [${f.name}] modified from "${f.prev || 'None'}" to "${f.current || 'None'}".`
+              });
+              
+              try {
+                state.logEvent(
+                  "Edit Request Field", 
+                  String(f.prev || 'None'), 
+                  String(f.current || 'None'), 
+                  `User changed request ${original.id} [${f.name}]: ${f.prev || 'None'} -> ${f.current || 'None'}`
+                );
+              } catch (e) {}
+            }
+          });
+
+          const updatedReq = {
+            ...original,
+            productName: primaryProduct.productName,
+            qty: primaryProduct.qty,
+            units: primaryProduct.units,
+            description: primaryProduct.description,
+            items,
+            priority: priority || "Normal",
+            billTo,
+            shipTo: shipTo || billTo,
+            transportMode: transportMode.trim(),
+            dueDate: dueDate || original.dueDate,
+            suggestedSupplier: suggestedSupplier || "",
+            suggestedSupplierPhone: suggestedSupplierPhone || "",
+            suggestedSupplierEmail: suggestedSupplierEmail || "",
+            suggestedSupplierRemarks: suggestedSupplierRemarks || "",
+            image: attachedFile || original.image,
+            imageName: attachedFileName || original.imageName,
+            history: [...(original.history || []), ...editHistoryEntries]
+          };
+
+          const saved = await apiService.updateRequest(cloneId, updatedReq);
+          const finalSaved = (saved && saved.id) ? saved : updatedReq;
+          state.setRequests(prev => (prev || []).map(r => r.id === cloneId ? finalSaved : r));
+          
+          state.showToast("Success", `Request ${cloneId} revised and updated successfully.`, "success");
+          
+          try {
+            addNotification(
+              "Request Revised",
+              `Employee: ${user.name}\nRequest ID: ${cloneId}\nUpdated fields: ${editHistoryEntries.map(e => e.remarks.split(']')[0].replace('Field [', '')).join(', ')}`,
+              "Admin"
             );
+          } catch (e) {}
+
+          try { state.triggerWebhook("request.updated", finalSaved); } catch (e) {}
+          navigateTo('#home');
+          return;
+        }
+      }
+
+      const reqId = `REQ-${Date.now()}`;
+
+      const newReq = {
+        id: reqId,
+        employeeName: user.name,
+        department: user.department || "General",
+        date: new Date().toISOString(),
+        createdDate: new Date().toLocaleDateString('en-GB'),
+        createdTime: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+        productName: primaryProduct.productName,
+        qty: primaryProduct.qty,
+        units: primaryProduct.units,
+        description: primaryProduct.description,
+        items,
+        suggestedSupplier: suggestedSupplier || "",
+        suggestedSupplierPhone: suggestedSupplierPhone || "",
+        suggestedSupplierEmail: suggestedSupplierEmail || "",
+        suggestedSupplierRemarks: suggestedSupplierRemarks || "",
+        billTo,
+        shipTo: shipTo || billTo,
+        transportMode: transportMode.trim(),
+        status: "Pending",
+        dueDate: dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        priority: priority || "Normal",
+        image: attachedFile || null,
+        imageName: attachedFileName || "",
+        supplierId: "",
+        poNumber: "",
+        poDate: "",
+        lrCopy: null,
+        history: [
+          {
+            status: "Pending",
+            updatedBy: user.name,
+            role: user.role,
+            timestamp: new Date().toISOString(),
+            remarks: "Initial request placed."
           }
-        });
+        ]
+      };
 
-        const updatedReq = {
-          ...original,
-          productName: primaryProduct.productName,
-          qty: primaryProduct.qty,
-          units: primaryProduct.units,
-          description: primaryProduct.description,
-          items,
-          priority: priority || "Normal",
-          billTo,
-          shipTo: shipTo || billTo,
-          transportMode: transportMode.trim(),
-          dueDate: dueDate || original.dueDate,
-          suggestedSupplier: suggestedSupplier || "",
-          suggestedSupplierPhone: suggestedSupplierPhone || "",
-          suggestedSupplierEmail: suggestedSupplierEmail || "",
-          suggestedSupplierRemarks: suggestedSupplierRemarks || "",
-          image: attachedFile || original.image,
-          imageName: attachedFileName || original.imageName,
-          history: [...(original.history || []), ...editHistoryEntries]
-        };
+      const saved = await apiService.createRequest(newReq);
+      const finalSaved = (saved && saved.id) ? saved : newReq;
+      state.setRequests(prev => [finalSaved, ...(prev || []).filter(r => r.id !== finalSaved.id)]);
 
-        const saved = await apiService.updateRequest(cloneId, updatedReq);
-        state.setRequests(state.requests.map(r => r.id === cloneId ? saved : r));
-        
-        state.showToast("Success", `Request ${cloneId} revised and updated successfully.`, "success");
-        
+      try {
+        state.logEvent("Created Request", "None", "Pending", `Created request ${reqId} for ${items.map(i => i.productName).join(', ')}.`);
+      } catch (e) {}
+
+      const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      try {
         addNotification(
-          "Request Revised",
-          `Employee: ${user.name}\nRequest ID: ${cloneId}\nUpdated fields: ${editHistoryEntries.map(e => e.remarks.split(']')[0].replace('Field [', '')).join(', ')}`,
+          "New Request Created",
+          `Employee: ${user.name}\nDept: ${user.department || "General"}\nTime: ${timeStr}\nPriority: ${priority}\nRequest ID: ${reqId}`,
           "Admin"
         );
+      } catch (e) {}
 
-        state.triggerWebhook("request.updated", saved);
-        navigateTo('#live-orders');
-        return;
-      }
+      try {
+        state.triggerWebhook("request.new", finalSaved);
+      } catch (e) {}
+
+      state.showToast("Request Placed", `Request ${reqId} created successfully.`, "success");
+
+      // Navigate back to Home Screen after successful database creation
+      navigateTo('#home');
+    } catch (err) {
+      console.error("Failed to place request:", err);
+      state.showToast("Error", err.message || "Failed to create request. Please try again.", "danger");
+      // Do not navigate if request creation failed
+    } finally {
+      setIsSubmitting(false);
     }
-
-    const reqId = `REQ-${Date.now()}`;
-
-    const newReq = {
-      id: reqId,
-      employeeName: user.name,
-      department: user.department || "General",
-      date: new Date().toISOString(),
-      createdDate: new Date().toLocaleDateString('en-GB'),
-      createdTime: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-      productName: primaryProduct.productName,
-      qty: primaryProduct.qty,
-      units: primaryProduct.units,
-      description: primaryProduct.description,
-      items,
-      suggestedSupplier: suggestedSupplier || "",
-      suggestedSupplierPhone: suggestedSupplierPhone || "",
-      suggestedSupplierEmail: suggestedSupplierEmail || "",
-      suggestedSupplierRemarks: suggestedSupplierRemarks || "",
-      billTo,
-      shipTo: shipTo || billTo,
-      transportMode: transportMode.trim(),
-      status: "Pending",
-      dueDate: dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      priority: priority || "Normal",
-      image: attachedFile || null,
-      imageName: attachedFileName || "",
-      supplierId: "",
-      poNumber: "",
-      poDate: "",
-      lrCopy: null,
-      history: [
-        {
-          status: "Pending",
-          updatedBy: user.name,
-          role: user.role,
-          timestamp: new Date().toISOString(),
-          remarks: "Initial request placed."
-        }
-      ]
-    };
-
-    const saved = await apiService.createRequest(newReq);
-    state.setRequests([saved, ...state.requests]);
-
-    state.logEvent("Created Request", "None", "Pending", `Created request ${reqId} for ${items.map(i => i.productName).join(', ')}.`);
-
-    const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    addNotification(
-      "New Request Created",
-      `Employee: ${user.name}\nDept: ${user.department || "General"}\nTime: ${timeStr}\nPriority: ${priority}\nRequest ID: ${reqId}`,
-      "Admin"
-    );
-
-    state.triggerWebhook("request.new", saved);
-
-    navigateTo('#home');
   };
 
   const handleVoiceInputForProduct = (e, index) => {
@@ -1413,8 +1441,17 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
           )}
         </div>
 
-        <button className="btn-dark" onClick={handleSubmit} style={{ marginTop: '10px', cursor: 'pointer' }}>
-          {cloneId ? "Save & Resend" : "Place Request"}
+        <button 
+          className="btn-dark" 
+          onClick={handleSubmit} 
+          disabled={isSubmitting}
+          style={{ 
+            marginTop: '10px', 
+            cursor: isSubmitting ? 'not-allowed' : 'pointer',
+            opacity: isSubmitting ? 0.7 : 1
+          }}
+        >
+          {isSubmitting ? "Placing Request..." : (cloneId ? "Save & Resend" : "Place Request")}
         </button>
       </div>
 
@@ -2384,6 +2421,30 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '24px', width: '100%' }}>
                   <button 
                     type="button"
+                    className="btn-generate-po" 
+                    style={{ 
+                      width: '100%', 
+                      height: '48px', 
+                      backgroundColor: '#1B1B1F', 
+                      color: '#ffffff',
+                      fontSize: '15px',
+                      fontWeight: '700',
+                      borderRadius: '16px',
+                      border: 'none',
+                      padding: '12px', 
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.18)',
+                      boxSizing: 'border-box'
+                    }} 
+                    onClick={() => handleApprove(req.id)}
+                  >
+                    Generate PO
+                  </button>
+                  <button 
+                    type="button"
                     className="btn-dark" 
                     style={{ 
                       width: '100%', 
@@ -2406,30 +2467,6 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                     onClick={() => handleReject(req.id)}
                   >
                     Reject
-                  </button>
-                  <button 
-                    type="button"
-                    className="btn-generate-po" 
-                    style={{ 
-                      width: '100%', 
-                      height: '48px', 
-                      backgroundColor: '#1B1B1F', 
-                      color: '#ffffff',
-                      fontSize: '15px',
-                      fontWeight: '700',
-                      borderRadius: '16px',
-                      border: 'none',
-                      padding: '12px', 
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.18)',
-                      boxSizing: 'border-box'
-                    }} 
-                    onClick={() => handleApprove(req.id)}
-                  >
-                    Generate PO
                   </button>
                 </div>
               </div>
@@ -2705,7 +2742,7 @@ function StatusFilterButton({ tab, count, isActive, onClick, gridColumn }) {
   const statusColors = {
     "No Response": "#FC0000",
     "Acknowledged": "#F28C28",
-    "Booked": "#2563EB",
+    "Booked": "#1B1B1F",
     "Received": "#22C55E",
     "Delayed": "#F3C82A"
   };
@@ -3698,7 +3735,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
             "Pending": "#E67E22",
             "No Response": "#FC0000",
             "Acknowledged": "#F28C28",
-            "Booked": "#2563EB",
+            "Booked": "#1B1B1F",
             "Received": "#22C55E",
             "Delayed": "#F3C82A"
           };
@@ -3853,7 +3890,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
               const trackingStageColors = {
                 "Order Placed": "#FC0000",
                 "Acknowledged": "#F28C28",
-                "Booked": "#2563EB",
+                "Booked": "#1B1B1F",
                 "Received": "#22C55E"
               };
               
@@ -3984,7 +4021,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
               const stageColors = {
                 "No Response": "#FC0000",
                 "Acknowledged": "#F28C28",
-                "Booked": "#2563EB",
+                "Booked": "#1B1B1F",
                 "Received": "#22C55E"
               };
               const dotColor = stageColors[stage.status] || "var(--status-green)";
@@ -4386,12 +4423,12 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
       const finalUser = saved && saved.id ? saved : updatedUser;
       state.setCurrentUser(finalUser);
       localStorage.setItem("pms_current_user", JSON.stringify(finalUser));
-      state.showToast("Profile Settings Saved", "Your profile icon color was updated successfully.", "success");
+      state.showToast("Avatar Settings Saved", "Your avatar customization was updated successfully.", "success");
     } catch (err) {
-      console.error("Failed to save profile icon color:", err);
+      console.error("Failed to save avatar settings:", err);
       state.setCurrentUser(updatedUser);
       localStorage.setItem("pms_current_user", JSON.stringify(updatedUser));
-      state.showToast("Profile Settings Saved", "Profile icon color saved.", "success");
+      state.showToast("Avatar Settings Saved", "Avatar settings saved.", "success");
     }
     closeModal();
   };
@@ -4399,7 +4436,7 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
   const openAvatarModal = () => {
     setModalContent(
       <AvatarEditor user={user} onSave={handleSaveAvatar} onClose={closeModal} />,
-      "Customize Profile Icon"
+      "Customize Avatar"
     );
     openModal();
   };
@@ -6148,14 +6185,27 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
 export function UserAvatar({ user, size = 40 }) {
   if (!user) return null;
   
-  if (user.avatar && user.avatar.startsWith("data:image")) {
+  if (user.avatar && (user.avatar.startsWith("data:") || user.avatar.startsWith("http"))) {
     return (
-      <img src={user.avatar} style={{ width: `${size}px`, height: `${size}px`, borderRadius: '50%', objectFit: 'cover', border: '1.5px solid var(--border-color)', flexShrink: 0 }} alt="Avatar" />
+      <img
+        src={user.avatar}
+        style={{
+          width: `${size}px`,
+          height: `${size}px`,
+          borderRadius: '50%',
+          objectFit: 'cover',
+          border: '1.5px solid var(--border-color)',
+          flexShrink: 0
+        }}
+        alt="Avatar"
+      />
     );
   }
 
   // Get initials
-  const initials = user.name ? user.name.trim().split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase() : (user.username ? user.username.slice(0, 1).toUpperCase() : "U");
+  const initials = user.name
+    ? user.name.trim().split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase()
+    : (user.username ? user.username.slice(0, 1).toUpperCase() : "U");
 
   // Determine profile color choice: "black", "orange", or "white"
   const colorKey = (user.profileColor || user.avatarColor || "black").toLowerCase();
@@ -6165,7 +6215,7 @@ export function UserAvatar({ user, size = 40 }) {
   let borderColor = "1.5px solid rgba(0,0,0,0.15)";
 
   if (colorKey === "orange" || colorKey === "#e67e35" || colorKey === "#ea580c") {
-    bgColor = "var(--primary-orange, #e67e35)";
+    bgColor = "var(--primary-orange, #ea580c)";
     textColor = "#ffffff";
     borderColor = "1.5px solid rgba(0,0,0,0.1)";
   } else if (colorKey === "white" || colorKey === "#ffffff") {
@@ -6179,22 +6229,24 @@ export function UserAvatar({ user, size = 40 }) {
   }
 
   return (
-    <div style={{
-      width: `${size}px`,
-      height: `${size}px`,
-      borderRadius: '50%',
-      backgroundColor: bgColor,
-      color: textColor,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontWeight: '700',
-      fontSize: `${Math.round(size * 0.42)}px`,
-      border: borderColor,
-      userSelect: 'none',
-      flexShrink: 0,
-      boxSizing: 'border-box'
-    }}>
+    <div
+      style={{
+        width: `${size}px`,
+        height: `${size}px`,
+        borderRadius: '50%',
+        backgroundColor: bgColor,
+        color: textColor,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontWeight: '700',
+        fontSize: `${Math.round(size * 0.42)}px`,
+        border: borderColor,
+        userSelect: 'none',
+        flexShrink: 0,
+        boxSizing: 'border-box'
+      }}
+    >
       {initials}
     </div>
   );
@@ -6204,8 +6256,9 @@ export function UserAvatar({ user, size = 40 }) {
 // 16. AVATAR / PROFILE COLOR EDITOR DRAWER COMPONENT
 // ----------------------------------------------------
 export function AvatarEditor({ user, onSave, onClose }) {
+  const [avatar, setAvatar] = useState(user.avatar || "");
   const [selectedColor, setSelectedColor] = useState(
-    user.profileColor || user.avatarColor || "black"
+    user.avatarColor || user.profileColor || "orange"
   );
 
   const colorOptions = [
@@ -6219,9 +6272,9 @@ export function AvatarEditor({ user, onSave, onClose }) {
     {
       id: "orange",
       name: "Orange",
-      bg: "#e67e35",
+      bg: "#ea580c",
       text: "#ffffff",
-      border: "1.5px solid #e67e35"
+      border: "1.5px solid #ea580c"
     },
     {
       id: "white",
@@ -6232,45 +6285,80 @@ export function AvatarEditor({ user, onSave, onClose }) {
     }
   ];
 
+  const presetIcons = ["🤖", "🦊", "🦉", "🐯", "👷"];
+
+  const buildPresetSvg = (icon, color) => {
+    const c = (color || "orange").toLowerCase();
+    if (c === "orange" || c === "#ea580c" || c === "#e67e35") {
+      return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='%23ea580c'/><text x='50' y='60' font-size='30' text-anchor='middle' fill='white'>${icon}</text></svg>`;
+    }
+    if (c === "white" || c === "#ffffff") {
+      return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='%23ffffff' stroke='%23d1d5db' stroke-width='4'/><text x='50' y='60' font-size='30' text-anchor='middle'>${icon}</text></svg>`;
+    }
+    // Black
+    return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='%23232120'/><text x='50' y='60' font-size='30' text-anchor='middle' fill='white'>${icon}</text></svg>`;
+  };
+
+  const handleColorChange = (newColor) => {
+    setSelectedColor(newColor);
+    // If the current avatar is a preset SVG, update it to match the new color
+    if (avatar && avatar.includes("<svg") && avatar.includes("<text")) {
+      const match = avatar.match(/>([^<]+)<\/text>/);
+      if (match && match[1]) {
+        setAvatar(buildPresetSvg(match[1], newColor));
+      }
+    }
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setAvatar(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSave = () => {
     onSave({
       ...user,
-      profileColor: selectedColor,
+      avatar,
       avatarColor: selectedColor,
-      avatar: "" // clear old external avatar url to use chosen color
+      profileColor: selectedColor
     });
   };
 
   const previewUser = {
     ...user,
-    profileColor: selectedColor,
+    avatar,
     avatarColor: selectedColor,
-    avatar: ""
+    profileColor: selectedColor
   };
 
   return (
     <div style={{ textAlign: 'left' }}>
-      {/* Live Profile Icon Preview */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '16px 0 20px', borderBottom: '1px solid var(--border-color)', marginBottom: '20px' }}>
+      {/* Live Avatar Preview */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px 0 18px', borderBottom: '1px solid var(--border-color)', marginBottom: '18px' }}>
         <div style={{ position: 'relative' }}>
           <UserAvatar user={previewUser} size={80} />
         </div>
-        <div style={{ marginTop: '12px', textAlign: 'center' }}>
+        <div style={{ marginTop: '10px', textAlign: 'center' }}>
           <div style={{ fontWeight: '800', fontSize: '16px', color: 'var(--text-main)' }}>{user.name || "User"}</div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{user.role || "Role"} • Profile Icon Preview</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{user.role || "Role"} • Avatar Preview</div>
         </div>
       </div>
 
-      {/* Color Selection Section */}
-      <div className="form-group" style={{ marginBottom: '20px' }}>
+      {/* Avatar Color Selection */}
+      <div className="form-group" style={{ marginBottom: '18px' }}>
         <label style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '8px', display: 'block' }}>
-          Select Profile Icon Color
+          Avatar Color
         </label>
-        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: '1.4' }}>
-          Choose an app brand color for your profile icon. This color will be applied consistently across the application.
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: '1.4' }}>
+          Select one of the MillMate brand colors for your avatar.
         </p>
 
-        {/* 3 Selectable Colors: Black, Orange, White */}
+        {/* 3 Colors: Black | Orange | White */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
           {colorOptions.map((opt) => {
             const isSelected = (selectedColor || "").toLowerCase() === opt.id.toLowerCase();
@@ -6278,41 +6366,41 @@ export function AvatarEditor({ user, onSave, onClose }) {
               <button
                 key={opt.id}
                 type="button"
-                onClick={() => setSelectedColor(opt.id)}
+                onClick={() => handleColorChange(opt.id)}
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  padding: '14px 8px',
+                  padding: '12px 8px',
                   borderRadius: '12px',
-                  backgroundColor: isSelected ? 'rgba(230, 126, 53, 0.06)' : 'var(--card-bg)',
+                  backgroundColor: isSelected ? 'rgba(230, 126, 53, 0.08)' : 'var(--card-bg)',
                   border: isSelected ? '2px solid var(--primary-orange)' : '1.5px solid var(--border-color)',
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
                   position: 'relative',
                   outline: 'none',
-                  boxShadow: isSelected ? '0 2px 8px rgba(230, 126, 53, 0.18)' : 'none'
+                  boxShadow: isSelected ? '0 2px 8px rgba(230, 126, 53, 0.2)' : 'none'
                 }}
               >
                 {/* Visual Swatch Circle */}
                 <div
                   style={{
-                    width: '38px',
-                    height: '38px',
+                    width: '36px',
+                    height: '36px',
                     borderRadius: '50%',
                     backgroundColor: opt.bg,
                     border: opt.border,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    marginBottom: '8px',
-                    boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
+                    marginBottom: '6px',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
                     position: 'relative'
                   }}
                 >
                   {isSelected && (
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke={opt.text} strokeWidth="3">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke={opt.text} strokeWidth="3">
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                   )}
@@ -6333,12 +6421,12 @@ export function AvatarEditor({ user, onSave, onClose }) {
                 {isSelected && (
                   <span
                     style={{
-                      marginTop: '4px',
+                      marginTop: '3px',
                       fontSize: '10px',
                       fontWeight: '700',
                       color: 'var(--primary-orange)',
                       textTransform: 'uppercase',
-                      letterSpacing: '0.5px'
+                      letterSpacing: '0.4px'
                     }}
                   >
                     Selected
@@ -6347,6 +6435,72 @@ export function AvatarEditor({ user, onSave, onClose }) {
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {/* Preset Avatars */}
+      <div className="form-group" style={{ marginBottom: '18px' }}>
+        <label style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '8px', display: 'block' }}>
+          Preset Avatars
+        </label>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginTop: '6px' }}>
+          {presetIcons.map((icon, idx) => {
+            const presetUrl = buildPresetSvg(icon, selectedColor);
+            const isSelected = avatar === presetUrl || (avatar && avatar.includes(icon));
+            return (
+              <img
+                key={idx}
+                src={presetUrl}
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  border: isSelected ? '3px solid var(--primary-orange)' : '1.5px solid var(--border-color)',
+                  padding: '2px',
+                  boxShadow: isSelected ? '0 2px 8px rgba(230, 126, 53, 0.25)' : 'none',
+                  transition: 'all 0.2s ease',
+                  backgroundColor: 'var(--card-bg)'
+                }}
+                onClick={() => setAvatar(buildPresetSvg(icon, selectedColor))}
+                alt={`Preset ${icon}`}
+              />
+            );
+          })}
+          <button
+            type="button"
+            className="btn-dark"
+            style={{
+              height: '44px',
+              padding: '0 14px',
+              borderRadius: '22px',
+              fontSize: '12px',
+              fontWeight: '700',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#f3f4f6',
+              border: '1.5px solid #d1d5db',
+              color: '#374151',
+              cursor: 'pointer',
+              marginBottom: 0
+            }}
+            onClick={() => setAvatar("")}
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+
+      {/* Upload Custom Picture */}
+      <div className="form-group" style={{ marginBottom: '18px' }}>
+        <label style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '8px', display: 'block' }}>
+          Upload Custom Picture
+        </label>
+        <div className="lr-upload-box" style={{ cursor: 'pointer', margin: 0 }}>
+          <div className="lr-text-primary">Choose Photo File</div>
+          <input type="file" accept="image/*" onChange={handleFileUpload} style={{ cursor: 'pointer' }} />
+          <span className="badge-view-lr">Browse</span>
         </div>
       </div>
 
@@ -6363,7 +6517,7 @@ export function AvatarEditor({ user, onSave, onClose }) {
         <button
           type="button"
           className="btn-orange"
-          style={{ flex: 1.5, cursor: 'pointer' }}
+          style={{ flex: 1.5, cursor: 'pointer', marginBottom: 0 }}
           onClick={handleSave}
         >
           Save Changes

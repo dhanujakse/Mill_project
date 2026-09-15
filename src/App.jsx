@@ -568,7 +568,11 @@ export default function App() {
         showToast,
         logout
       },
-      navigateTo: (h) => { window.location.hash = h; },
+      navigateTo: (h) => {
+        window.location.hash = h;
+        setCurrentHash(h || '#home');
+        setModalOpen(false);
+      },
       addNotification,
       openModal: () => setModalOpen(true),
       closeModal: () => setModalOpen(false),
