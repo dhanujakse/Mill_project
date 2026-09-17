@@ -1028,11 +1028,11 @@ select.form-control {
 }
 
 .status-badge.pending { background-color: #eab308; color: #ffffff; }
-.status-badge.approved { background-color: #1B1B1F; color: #ffffff; }
+.status-badge.approved { background-color: #2563eb; color: #ffffff; }
 .status-badge.rejected { background-color: #6b7280; color: #ffffff; }
 .status-badge.noresponse { background-color: #FC0000; color: #ffffff; }
 .status-badge.acknowledged { background-color: #F28C28; color: #ffffff; }
-.status-badge.booked { background-color: #1B1B1F; color: #ffffff; }
+.status-badge.booked { background-color: #2563EB; color: #ffffff; }
 .status-badge.received { background-color: #22C55E; color: #ffffff; }
 .status-badge.delayed { background-color: #F3C82A; color: #000000; }
 .status-badge.cancelled { background-color: #6b7280; color: #ffffff; }
@@ -1167,6 +1167,11 @@ select.form-control {
 .po-table th {
   background-color: #f8f9fa;
   font-weight: 700;
+}
+
+.po-description {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .po-signature {

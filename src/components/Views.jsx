@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
-import { CONFIG, COMPANY_ADDRESSES, COMPANY_OPTIONS, getCompanyAddress } from '../config';
+import { CONFIG, COMPANY_ADDRESSES, COMPANY_OPTIONS, BILL_TO_OPTIONS, getShipToOptions, getCompanyAddress } from '../config';
 
 // ----------------------------------------------------
 // ICON CONSTANTS (Reusable clean SVG vectors)
@@ -65,7 +65,7 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
     return diffDays > 14;
   };
 
-  const pendingCount = userRequests.filter(r => r.status === "Pending").length;
+  const pendingCount = userRequests.filter(r => r.status === "Pending" || r.status === "Rejected").length;
   const noResponseCount = userRequests.filter(r => r.status === "No Response").length;
   const acknowledgedCount = userRequests.filter(r => r.status === "Acknowledged").length;
   const bookedCount = userRequests.filter(r => r.status === "Booked").length;
@@ -178,7 +178,7 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#FC0000', color: '#ffffff', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="No Response">{noResponseCount}</span>
           <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#F28C28', color: '#ffffff', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="Acknowledged">{acknowledgedCount}</span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1B1B1F', color: '#ffffff', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="Booked">{bookedCount}</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#2563EB', color: '#ffffff', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="Booked">{bookedCount}</span>
           {receivedCount > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#22C55E', color: '#ffffff', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="Received">{receivedCount}</span>}
           {delayedCount > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#F3C82A', color: '#000000', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="Delayed">{delayedCount}</span>}
         </div>
@@ -291,7 +291,7 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
               style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 24px', cursor: 'pointer', borderBottom: '1.5px solid #f6f5f4' }}
             >
               <span style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#1B1B1F' }}></span>
+                <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#2563EB' }}></span>
                 Booked
               </span>
               <span style={{ background: '#f5efe9', color: '#2a2726', fontWeight: '800', fontSize: '13px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%' }}>
@@ -390,8 +390,8 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
   const [suggestedSupplierEmail, setSuggestedSupplierEmail] = useState("");
   const [suggestedSupplierRemarks, setSuggestedSupplierRemarks] = useState("");
   const [isManualSupplier, setIsManualSupplier] = useState(false);
-  const [billTo, setBillTo] = useState((state.branding.billingLocations && state.branding.billingLocations[0]) || "ALAGIRI PAPER MILLS");
-  const [shipTo, setShipTo] = useState((state.branding.billingLocations && state.branding.billingLocations[0]) || "ALAGIRI PAPER MILLS");
+  const [billTo, setBillTo] = useState("");
+  const [shipTo, setShipTo] = useState("");
   const [transportMode, setTransportMode] = useState("");
   const [errors, setErrors] = useState({});
 
@@ -486,8 +486,15 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
         if (clonedReq.suggestedSupplier && !state.suppliers.some(s => s.companyName.toLowerCase() === clonedReq.suggestedSupplier.toLowerCase())) {
           setIsManualSupplier(true);
         }
-        setBillTo(clonedReq.billTo || (state.branding.billingLocations && state.branding.billingLocations[0]) || "ALAGIRI PAPER MILLS");
-        setShipTo(clonedReq.shipTo || clonedReq.billTo || (state.branding.billingLocations && state.branding.billingLocations[0]) || "ALAGIRI PAPER MILLS");
+        const initialBillTo = clonedReq.billTo && BILL_TO_OPTIONS.includes(clonedReq.billTo)
+          ? clonedReq.billTo
+          : (clonedReq.billTo && clonedReq.billTo.includes("DUPLEX") ? "Alagiri Duplex Factory" : "Alagiri Paper Mill Factory");
+        setBillTo(initialBillTo);
+        const validShipOptions = getShipToOptions(initialBillTo);
+        const initialShipTo = clonedReq.shipTo && validShipOptions.includes(clonedReq.shipTo)
+          ? clonedReq.shipTo
+          : validShipOptions[0];
+        setShipTo(initialShipTo);
         setTransportMode(clonedReq.transportMode || "");
         setDueDate(clonedReq.dueDate || "");
         setPriority(clonedReq.priority || "Normal");
@@ -495,7 +502,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
         setAttachedFileName(clonedReq.imageName || "");
       }
     }
-  }, [cloneId, state.requests, state.suppliers, state.branding.billingLocations]);
+  }, [cloneId, state.requests, state.suppliers]);
 
   const validateField = (field, value) => {
     let err = "";
@@ -659,88 +666,28 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
   };
 
   const handleBillToChange = (val) => {
-    if (val === "ADD_NEW") {
-      let newLoc = "";
-      setModalContent(
-        <div style={{ textAlign: 'left' }}>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
-            Enter the new billing company/location name:
-          </p>
-          <div className="form-group">
-            <input 
-              type="text" 
-              className="form-control" 
-              placeholder="e.g. ALAGIRI BOARD DIVISION" 
-              onChange={e => { newLoc = e.target.value; }} 
-              style={{ cursor: 'text' }}
-            />
-          </div>
-          <button 
-            className="btn-orange" 
-            onClick={() => {
-              if (newLoc.trim()) {
-                const updatedLocations = [...(state.branding.billingLocations || []), newLoc.trim()];
-                state.updateBranding({
-                  ...state.branding,
-                  billingLocations: updatedLocations
-                });
-                setBillTo(newLoc.trim());
-              }
-              closeModal();
-            }} 
-            style={{ width: '100%', cursor: 'pointer' }}
-          >
-            Add Location
-          </button>
-        </div>,
-        "Add New Location"
-      );
-      openModal();
-    } else {
-      setBillTo(val);
+    setBillTo(val);
+    const validShipOptions = getShipToOptions(val);
+    if (!validShipOptions.includes(shipTo)) {
+      setShipTo("");
+    }
+    if (errors.billTo) {
+      setErrors(prev => {
+        const next = { ...prev };
+        delete next.billTo;
+        return next;
+      });
     }
   };
 
   const handleShipToChange = (val) => {
-    if (val === "ADD_NEW") {
-      let newLoc = "";
-      setModalContent(
-        <div style={{ textAlign: 'left' }}>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
-            Enter the new shipping company/location name:
-          </p>
-          <div className="form-group">
-            <input 
-              type="text" 
-              className="form-control" 
-              placeholder="e.g. ALAGIRI BOARD DIVISION" 
-              onChange={e => { newLoc = e.target.value; }} 
-              style={{ cursor: 'text' }}
-            />
-          </div>
-          <button 
-            className="btn-orange" 
-            onClick={() => {
-              if (newLoc.trim()) {
-                const updatedLocations = [...(state.branding.billingLocations || []), newLoc.trim()];
-                state.updateBranding({
-                  ...state.branding,
-                  billingLocations: updatedLocations
-                });
-                setShipTo(newLoc.trim());
-              }
-              closeModal();
-            }} 
-            style={{ width: '100%', cursor: 'pointer' }}
-          >
-            Add Location
-          </button>
-        </div>,
-        "Add New Location"
-      );
-      openModal();
-    } else {
-      setShipTo(val);
+    setShipTo(val);
+    if (errors.shipTo) {
+      setErrors(prev => {
+        const next = { ...prev };
+        delete next.shipTo;
+        return next;
+      });
     }
   };
   const user = state.currentUser;
@@ -788,6 +735,14 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       if (!/^\d+$/.test(stripped.replace(/[\s-]/g, ''))) {
         newErrors.suggestedSupplierPhone = "Phone number must contain numbers only.";
       }
+    }
+
+    if (!billTo || !BILL_TO_OPTIONS.includes(billTo)) {
+      newErrors.billTo = "Please select a valid Bill To location.";
+    }
+    const validShipOptions = getShipToOptions(billTo);
+    if (!shipTo || !validShipOptions.includes(shipTo)) {
+      newErrors.shipTo = "Please select a valid Ship To location.";
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -1284,13 +1239,17 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
               className="form-control" 
               value={billTo} 
               onChange={e => handleBillToChange(e.target.value)} 
-              style={{ cursor: 'pointer' }}
+              style={{ 
+                cursor: 'pointer',
+                borderColor: errors.billTo ? 'var(--status-red)' : undefined
+              }}
             >
-              {(state.branding.billingLocations || COMPANY_OPTIONS).map(loc => (
+              <option value="" disabled>Select Bill To...</option>
+              {BILL_TO_OPTIONS.map(loc => (
                 <option key={loc} value={loc}>{loc}</option>
               ))}
-              <option value="ADD_NEW">+ (Add New Location)</option>
             </select>
+            {errors.billTo && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px', textAlign: 'left' }}>{errors.billTo}</div>}
           </div>
           <div className="form-group">
             <label>Ship to</label>
@@ -1298,13 +1257,18 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
               className="form-control" 
               value={shipTo} 
               onChange={e => handleShipToChange(e.target.value)} 
-              style={{ cursor: 'pointer' }}
+              style={{ 
+                cursor: 'pointer',
+                borderColor: errors.shipTo ? 'var(--status-red)' : undefined
+              }}
+              disabled={!billTo}
             >
-              {(state.branding.billingLocations || COMPANY_OPTIONS).map(loc => (
+              <option value="" disabled>Select Ship To...</option>
+              {getShipToOptions(billTo).map(loc => (
                 <option key={loc} value={loc}>{loc}</option>
               ))}
-              <option value="ADD_NEW">+ (Add New Location)</option>
             </select>
+            {errors.shipTo && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px', textAlign: 'left' }}>{errors.shipTo}</div>}
           </div>
         </div>
 
@@ -1645,7 +1609,7 @@ export function SupplierPicker({ suppliers, currentSupplierId, onSelect, product
 // ----------------------------------------------------
 export function RequestedOrdersView({ state, navigateTo, addNotification, openModal, closeModal, setModalContent }) {
   const user = state.currentUser;
-  const pendingRequests = state.requests.filter(r => r.status === "Pending" && (!r.deletedByUserIds || !r.deletedByUserIds.includes(user.id)));
+  const pendingRequests = state.requests.filter(r => (r.status === "Pending" || r.status === "Rejected") && (!r.deletedByUserIds || !r.deletedByUserIds.includes(user.id)));
   
   // URL Hash parameter tracking for selected order navigation (Requirement 8)
   const getSelectedIdFromHash = () => {
@@ -1684,8 +1648,8 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
           units: req.units || reqItems[0].units || "pcs",
           description: req.description || reqItems[0].description || "",
           items: reqItems,
-          billTo: req.billTo || (state.branding.billingLocations ? state.branding.billingLocations[0] : "ALAGIRI PAPER MILLS"),
-          shipTo: req.shipTo || req.billTo || (state.branding.billingLocations ? state.branding.billingLocations[0] : "ALAGIRI PAPER MILLS"),
+          billTo: req.billTo || BILL_TO_OPTIONS[0],
+          shipTo: req.shipTo || req.billTo || BILL_TO_OPTIONS[0],
           transportMode: req.transportMode || "",
           supplierId: req.supplierId || ""
         };
@@ -1725,89 +1689,16 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
   };
 
   const handleApprovalBillToChange = (reqId, val) => {
-    if (val === "ADD_NEW") {
-      let newLoc = "";
-      setModalContent(
-        <div style={{ textAlign: 'left' }}>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
-            Enter the new billing company/location name:
-          </p>
-          <div className="form-group">
-            <input 
-              type="text" 
-              className="form-control" 
-              placeholder="e.g. ALAGIRI BOARD DIVISION" 
-              onChange={e => { newLoc = e.target.value; }} 
-              style={{ cursor: 'text' }}
-            />
-          </div>
-          <button 
-            className="btn-orange" 
-            onClick={() => {
-              if (newLoc.trim()) {
-                const updatedLocations = [...(state.branding.billingLocations || COMPANY_OPTIONS), newLoc.trim()];
-                state.updateBranding({
-                  ...state.branding,
-                  billingLocations: updatedLocations
-                });
-                updateCardField(reqId, "billTo", newLoc.trim());
-              }
-              closeModal();
-            }} 
-            style={{ width: '100%', cursor: 'pointer' }}
-          >
-            Add Location
-          </button>
-        </div>,
-        "Add New Location"
-      );
-      openModal();
-    } else {
-      updateCardField(reqId, "billTo", val);
+    updateCardField(reqId, "billTo", val);
+    const validShipOptions = getShipToOptions(val);
+    const currentShipTo = formData[reqId]?.shipTo || formData[reqId]?.billTo;
+    if (!validShipOptions.includes(currentShipTo)) {
+      updateCardField(reqId, "shipTo", validShipOptions[0]);
     }
   };
 
   const handleApprovalShipToChange = (reqId, val) => {
-    if (val === "ADD_NEW") {
-      let newLoc = "";
-      setModalContent(
-        <div style={{ textAlign: 'left' }}>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
-            Enter the new shipping company/location name:
-          </p>
-          <div className="form-group">
-            <input 
-              type="text" 
-              className="form-control" 
-              placeholder="e.g. ALAGIRI BOARD DIVISION" 
-              onChange={e => { newLoc = e.target.value; }} 
-              style={{ cursor: 'text' }}
-            />
-          </div>
-          <button 
-            className="btn-orange" 
-            onClick={() => {
-              if (newLoc.trim()) {
-                const updatedLocations = [...(state.branding.billingLocations || COMPANY_OPTIONS), newLoc.trim()];
-                state.updateBranding({
-                  ...state.branding,
-                  billingLocations: updatedLocations
-                });
-                updateCardField(reqId, "shipTo", newLoc.trim());
-              }
-              closeModal();
-            }} 
-            style={{ width: '100%', cursor: 'pointer' }}
-          >
-            Add Location
-          </button>
-        </div>,
-        "Add New Location"
-      );
-      openModal();
-    } else {
-      updateCardField(reqId, "shipTo", val);
-    }
+    updateCardField(reqId, "shipTo", val);
   };
 
   const handleApprove = async (id) => {
@@ -1984,6 +1875,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
             state.triggerWebhook("request.rejected", saved);
             
             closeModal();
+            navigateTo('#requested-orders');
           }} 
           style={{ width: '100%', cursor: 'pointer' }}
         >
@@ -2134,6 +2026,24 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                     </span>
                   </div>
 
+{req.status === "Rejected" && (
+  (() => {
+    const rejectedByItem = req.history?.find(h => h.status === "Rejected") || {};
+    const rejectedBy = rejectedByItem.updatedBy || "Admin";
+    const rejectionReason = rejectedByItem.remarks || "No reason specified.";
+    const rejectionTime = rejectedByItem.timestamp ? new Date(rejectedByItem.timestamp).toLocaleString('en-GB') : new Date(req.date).toLocaleString('en-GB');
+    return (
+      <div style={{ background: '#fff5f5', borderLeft: '3px solid var(--status-red)', padding: '10px 12px', borderRadius: '4px', fontSize: '13px', textAlign: 'left', marginBottom: '12px' }}>
+        <div style={{ fontWeight: '700', color: '#c53030', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          Rejected By {rejectedBy} • {rejectionTime}
+        </div>
+        <div style={{ color: '#742a2a', fontStyle: 'italic', lineHeight: '1.4' }}>
+          “{rejectionReason}”
+        </div>
+      </div>
+    );
+  })()
+)}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
                     {reqItems.map((it, idx) => (
                       <div key={idx} style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '14px' }}>
@@ -2144,7 +2054,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                           {it.productName} <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)' }}>({it.qty} {it.units})</span>
                         </div>
                         {it.description && (
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                             <b>Description:</b> {it.description}
                           </div>
                         )}
@@ -2153,7 +2063,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                   </div>
 
                   <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '14px', marginBottom: '14px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <div><b>Bill To:</b> {req.billTo || "ALAGIRI PAPER MILLS"}</div>
+                    <div><b>Bill To:</b> {req.billTo || BILL_TO_OPTIONS[0]}</div>
                     <div><b>Ship To:</b> {req.shipTo || req.billTo || "ALAGIRI PAPER MILLS"}</div>
                     {req.transportMode && <div><b>Mode of Transport:</b> <span style={{ fontWeight: '800', color: 'var(--primary-orange)' }}>{req.transportMode}</span></div>}
                     <div><b>Requested By:</b> {req.employeeName || "Employee"}</div>
@@ -2261,28 +2171,26 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                     <label>Bill to</label>
                     <select 
                       className="form-control" 
-                      value={current.billTo} 
+                      value={current.billTo || BILL_TO_OPTIONS[0]} 
                       onChange={e => handleApprovalBillToChange(req.id, e.target.value)} 
                       style={{ cursor: 'pointer' }}
                     >
-                      {(state.branding.billingLocations || COMPANY_OPTIONS).map(loc => (
+                      {BILL_TO_OPTIONS.map(loc => (
                         <option key={loc} value={loc}>{loc}</option>
                       ))}
-                      <option value="ADD_NEW">+ (Add New Location)</option>
                     </select>
                   </div>
                   <div className="form-group">
                     <label>Ship to</label>
                     <select 
                       className="form-control" 
-                      value={current.shipTo || current.billTo} 
+                      value={current.shipTo || current.billTo || BILL_TO_OPTIONS[0]} 
                       onChange={e => handleApprovalShipToChange(req.id, e.target.value)} 
                       style={{ cursor: 'pointer' }}
                     >
-                      {(state.branding.billingLocations || COMPANY_OPTIONS).map(loc => (
+                      {getShipToOptions(current.billTo || BILL_TO_OPTIONS[0]).map(loc => (
                         <option key={loc} value={loc}>{loc}</option>
                       ))}
-                      <option value="ADD_NEW">+ (Add New Location)</option>
                     </select>
                   </div>
                 </div>
@@ -2496,12 +2404,14 @@ export function PoPreviewView({ state, navigateTo, requestId, addNotification })
   const billToLines = getCompanyAddress(req.billTo, 'billTo');
   const shipToLines = getCompanyAddress(req.shipTo || req.billTo, 'shipTo');
 
+  const formattedDueDate = req.dueDate ? new Date(req.dueDate).toLocaleDateString('en-GB') : "";
+
   const itemsSummaryText = items.map((it, idx) => 
-    `*Item ${idx + 1}:* ${it.productName}\n*Description:* *${it.description || "N/A"}*\n*Quantity:* ${it.qty} ${it.units}`
+    `*Item ${idx + 1}:* ${it.productName}\n*Description:*\n${it.description || "N/A"}\n*Quantity:* ${it.qty} ${it.units}`
   ).join('\n----------------------------------------\n');
 
   const formattedMsg = `*PURCHASE ORDER: ${req.poNumber}*
-Date: ${new Date(req.poDate).toLocaleDateString('en-GB')}
+PO Date: ${new Date(req.poDate).toLocaleDateString('en-GB')}${formattedDueDate ? `\nExpected Dispatch / Due Date: ${formattedDueDate}` : ""}
 
 *BILL TO:*
 ${billToLines.join('\n')}
@@ -2517,7 +2427,7 @@ ${req.transportMode ? `\n*MODE OF TRANSPORT:* ${req.transportMode}` : ""}
 ----------------------------------------
 ${itemsSummaryText}
 ----------------------------------------
-*Instructions:* Please acknowledge receipt of this PO. Upload LR Copy once shipment is sent.`;
+${formattedDueDate ? `*Expected Dispatch Date:* ${formattedDueDate}\n----------------------------------------\n` : ""}*Instructions:* Please acknowledge receipt of this PO. Upload LR Copy once shipment is sent.`;
 
   const handleShareWhatsApp = async () => {
     const url = `https://api.whatsapp.com/send?phone=${supplierPhone}&text=${encodeURIComponent(formattedMsg)}`;
@@ -2582,8 +2492,13 @@ ${itemsSummaryText}
                 <b>PO No:</b> <span style={{ color: 'var(--primary-orange)' }}>{req.poNumber}</span>
               </div>
               <div style={{ fontSize: '12px', color: '#4b5563', marginTop: '2px' }}>
-                <b>Date:</b> {new Date(req.poDate).toLocaleDateString('en-GB')}
+                <b>PO Date:</b> {new Date(req.poDate).toLocaleDateString('en-GB')}
               </div>
+              {req.dueDate && (
+                <div style={{ fontSize: '12px', color: '#1f2937', marginTop: '3px' }}>
+                  <b>Due / Expected Dispatch:</b> <span style={{ fontWeight: '800', color: 'var(--primary-orange)' }}>{new Date(req.dueDate).toLocaleDateString('en-GB')}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -2639,10 +2554,28 @@ ${itemsSummaryText}
                     <div style={{ fontSize: '15px', fontWeight: '800', color: '#111827', marginTop: '2px' }}>
                       {item.productName}
                     </div>
-                    {/* Product description is main information - larger and bold */}
+                    {/* Product description is main information - larger and bold with multiline preservation */}
                     {item.description && (
-                      <div style={{ fontSize: '14px', fontWeight: '700', color: '#1f2937', marginTop: '6px', lineHeight: '1.5', background: '#fafaf9', padding: '8px 12px', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                        {item.description}
+                      <div 
+                        className="po-description"
+                        style={{ 
+                          fontSize: '13px', 
+                          fontWeight: '600', 
+                          color: '#1f2937', 
+                          marginTop: '6px', 
+                          lineHeight: '1.6', 
+                          background: '#fafaf9', 
+                          padding: '10px 14px', 
+                          borderRadius: '8px', 
+                          border: '1px solid #e5e7eb',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word'
+                        }}
+                      >
+                        <div style={{ fontSize: '11px', fontWeight: '800', color: '#6b7280', textTransform: 'uppercase', marginBottom: '4px', letterSpacing: '0.4px' }}>
+                          Specifications / Description:
+                        </div>
+                        <div style={{ whiteSpace: 'pre-wrap' }}>{item.description}</div>
                       </div>
                     )}
                   </td>
@@ -2655,8 +2588,9 @@ ${itemsSummaryText}
           </table>
 
           <div className="po-signature" style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px dashed #d1d5db', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-            <div style={{ fontSize: '11px', color: '#6b7280' }}>
-              Expected delivery: 7 days
+            <div style={{ fontSize: '12px', color: '#4b5563', textAlign: 'left' }}>
+              <div><b>Due Date / Expected Dispatch:</b> <span style={{ fontWeight: '800', color: '#111827' }}>{req.dueDate ? new Date(req.dueDate).toLocaleDateString('en-GB') : "Within 7 days of PO"}</span></div>
+              <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>Standard procurement terms apply</div>
             </div>
             <div style={{ textAlign: 'right' }}>
               Authorized Signatory<br />
@@ -2742,7 +2676,7 @@ function StatusFilterButton({ tab, count, isActive, onClick, gridColumn }) {
   const statusColors = {
     "No Response": "#FC0000",
     "Acknowledged": "#F28C28",
-    "Booked": "#1B1B1F",
+    "Booked": "#2563EB",
     "Received": "#22C55E",
     "Delayed": "#F3C82A"
   };
@@ -3735,7 +3669,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
             "Pending": "#E67E22",
             "No Response": "#FC0000",
             "Acknowledged": "#F28C28",
-            "Booked": "#1B1B1F",
+            "Booked": "#2563EB",
             "Received": "#22C55E",
             "Delayed": "#F3C82A"
           };
@@ -3857,7 +3791,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
                 Supplier: {supplier.companyName || req.suggestedSupplier || "Assigned Supplier"}
               </div>
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <div><b>Bill To:</b> {req.billTo || "ALAGIRI PAPER MILLS"} &nbsp;|&nbsp; <b>Ship To:</b> {req.shipTo || req.billTo || "ALAGIRI PAPER MILLS"}</div>
+                <div><b>Bill To:</b> {req.billTo || BILL_TO_OPTIONS[0]} &nbsp;|&nbsp; <b>Ship To:</b> {req.shipTo || req.billTo || BILL_TO_OPTIONS[0]}</div>
                 {req.transportMode && <div><b>Mode of Transport:</b> <span style={{ fontWeight: '800', color: 'var(--primary-orange)' }}>{req.transportMode}</span></div>}
               </div>
             </div>
@@ -3890,7 +3824,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
               const trackingStageColors = {
                 "Order Placed": "#FC0000",
                 "Acknowledged": "#F28C28",
-                "Booked": "#1B1B1F",
+                "Booked": "#2563EB",
                 "Received": "#22C55E"
               };
               
@@ -4021,7 +3955,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
               const stageColors = {
                 "No Response": "#FC0000",
                 "Acknowledged": "#F28C28",
-                "Booked": "#1B1B1F",
+                "Booked": "#2563EB",
                 "Received": "#22C55E"
               };
               const dotColor = stageColors[stage.status] || "var(--status-green)";
@@ -4133,7 +4067,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
                       {it.productName}
                     </div>
                     {it.description && (
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.4', marginTop: '6px', background: '#f8fafc', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.5', marginTop: '6px', background: '#f8fafc', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                         <b>Description:</b> {it.description}
                       </div>
                     )}
@@ -6185,7 +6119,7 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
 export function UserAvatar({ user, size = 40 }) {
   if (!user) return null;
   
-  if (user.avatar && (user.avatar.startsWith("data:") || user.avatar.startsWith("http"))) {
+  if (user.avatar && typeof user.avatar === 'string' && (user.avatar.startsWith("data:") || user.avatar.startsWith("http")) && !user.avatar.includes("dicebear.com")) {
     return (
       <img
         src={user.avatar}
@@ -6261,15 +6195,22 @@ export function AvatarEditor({ user, onSave, onClose }) {
 
   const [selectedIcon, setSelectedIcon] = useState(() => {
     if (user.avatar && typeof user.avatar === 'string' && user.avatar.startsWith('data:image/svg')) {
+      const decoded = decodeURIComponent(user.avatar);
       for (const icon of ["🤖", "🦊", "🦉", "🐯", "👷"]) {
-        if (user.avatar.includes(icon)) return icon;
+        if (decoded.includes(icon) || user.avatar.includes(icon)) return icon;
       }
     }
     return null;
   });
 
   const [customPhoto, setCustomPhoto] = useState(() => {
-    if (user.avatar && typeof user.avatar === 'string' && !user.avatar.startsWith('data:image/svg') && !user.avatar.includes('<svg')) {
+    if (
+      user.avatar &&
+      typeof user.avatar === 'string' &&
+      !user.avatar.startsWith('data:image/svg') &&
+      !user.avatar.includes('<svg') &&
+      !user.avatar.includes('dicebear.com')
+    ) {
       return user.avatar;
     }
     return "";
@@ -6303,23 +6244,23 @@ export function AvatarEditor({ user, onSave, onClose }) {
 
   const buildPresetSvg = (icon, color) => {
     const c = (color || "black").toLowerCase();
-    let fill = "%23232120"; // black
-    let textColor = "%23ffffff";
-    let strokeAttr = "";
+    let fill = "#232120"; // black
+    let textColor = "#ffffff";
+    let stroke = "none";
+    let strokeWidth = "0";
 
     if (c === "orange" || c === "#ea580c" || c === "#e67e35") {
-      fill = "%23ea580c";
-      textColor = "%23ffffff";
+      fill = "#ea580c";
+      textColor = "#ffffff";
     } else if (c === "white" || c === "#ffffff") {
-      fill = "%23ffffff";
-      textColor = "%23232120";
-      strokeAttr = " stroke='%23d1d5db' stroke-width='4'";
-    } else {
-      fill = "%23232120";
-      textColor = "%23ffffff";
+      fill = "#ffffff";
+      textColor = "#232120";
+      stroke = "#d1d5db";
+      strokeWidth = "4";
     }
 
-    return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='${fill}'${strokeAttr}/><text x='50' y='60' font-size='30' text-anchor='middle' fill='${textColor}'>${icon}</text></svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}"/><text x="50" y="62" font-size="38" text-anchor="middle" dominant-baseline="middle">${icon}</text></svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   };
 
   const currentAvatar = customPhoto
@@ -6328,11 +6269,18 @@ export function AvatarEditor({ user, onSave, onClose }) {
 
   const handleColorChange = (newColor) => {
     setSelectedColor(newColor);
+    if (customPhoto) {
+      setCustomPhoto("");
+    }
   };
 
   const handleSelectPreset = (icon) => {
     setCustomPhoto("");
-    setSelectedIcon(icon);
+    if (selectedIcon === icon) {
+      setSelectedIcon(null);
+    } else {
+      setSelectedIcon(icon);
+    }
   };
 
   const handleReset = () => {

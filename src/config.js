@@ -1,56 +1,95 @@
 // Configurable options and mock data for the React Procurement Management System
-export const COMPANY_ADDRESSES = {
-  "ALAGIRI PAPER MILLS": {
-    name: "ALAGIRI PAPER MILLS",
-    billTo: [
-      "ALAGIRI PAPER MILLS",
-      "NO: 1M BHARATHI NAGAR",
-      "2nd Street.",
-      "KOVILPATTI - 628501",
-      "TAMILNADU"
-    ],
-    shipTo: [
-      "ALAGIRI PAPER MILLS",
-      "3/229 N. PULUMPATTI",
-      "N. SUBBIAHPURAM POST.",
-      "SATTUR TALUK.",
-      "TAMILNADU. - 626205"
-    ]
-  },
-  "ALAGIRI DUPLEX": {
-    name: "ALAGIRI DUPLEX",
-    billTo: [
-      "ALAGIRI DUPLEX",
-      "NO: 1/M-1 BHARATHI NAGAR",
-      "NORTH 2nd Street",
-      "KOVILPATTI - 628501",
-      "TAMILNADU"
-    ],
-    shipTo: [
-      "ALAGIRI DUPLEX",
-      "106/3A EAST STREET.",
-      "N. SUBBIAHPURAM",
-      "PETHUREDDI PATTI",
-      "SATTUR TALUK",
-      "TAMILNADU"
-    ]
+export const BILL_TO_OPTIONS = [
+  "Alagiri Duplex Factory",
+  "Alagiri Duplex Office",
+  "Alagiri Paper Mill Factory",
+  "Alagiri Paper Mill Office"
+];
+
+export const getShipToOptions = (billToVal) => {
+  if (!billToVal) return [];
+  const normalized = String(billToVal).toLowerCase();
+  if (normalized.includes("duplex")) {
+    return [
+      "Alagiri Duplex Factory",
+      "Alagiri Duplex Office"
+    ];
   }
+  if (normalized.includes("paper") || normalized.includes("mill")) {
+    return [
+      "Alagiri Paper Mill Factory",
+      "Alagiri Paper Mill Office"
+    ];
+  }
+  return [
+    "Alagiri Paper Mill Factory",
+    "Alagiri Paper Mill Office"
+  ];
 };
 
 export const COMPANY_OPTIONS = [
-  "ALAGIRI PAPER MILLS",
-  "ALAGIRI DUPLEX"
+  "Alagiri Duplex Factory",
+  "Alagiri Duplex Office",
+  "Alagiri Paper Mill Factory",
+  "Alagiri Paper Mill Office"
 ];
+
+export const COMPANY_ADDRESSES = {
+  "Alagiri Duplex Factory": [
+    "ALAGIRI DUPLEX",
+    "106/3A EAST STREET.",
+    "N. SUBBIAHPURAM",
+    "PETHUREDDI PATTI",
+    "SATTUR TALUK",
+    "TAMILNADU"
+  ],
+  "Alagiri Duplex Office": [
+    "ALAGIRI DUPLEX",
+    "NO: 1/M-1 BHARATHI NAGAR",
+    "NORTH 2nd Street",
+    "KOVILPATTI - 628501",
+    "TAMILNADU"
+  ],
+  "Alagiri Paper Mill Factory": [
+    "ALAGIRI PAPER MILLS",
+    "3/229 N. PULUMPATTI",
+    "N. SUBBIAHPURAM POST.",
+    "SATTUR TALUK.",
+    "TAMILNADU. - 626205"
+  ],
+  "Alagiri Paper Mill Office": [
+    "ALAGIRI PAPER MILLS",
+    "NO: 1M BHARATHI NAGAR",
+    "2nd Street.",
+    "KOVILPATTI - 628501",
+    "TAMILNADU"
+  ]
+};
 
 export const getCompanyAddress = (companyName, type = 'billTo') => {
   if (!companyName) return [];
+  
+  // Exact match
+  if (COMPANY_ADDRESSES[companyName]) {
+    return COMPANY_ADDRESSES[companyName];
+  }
+
   const normalized = String(companyName).toUpperCase().trim();
-  if (normalized.includes("PAPER") || normalized === "ALAGIRI PAPER MILLS") {
-    return COMPANY_ADDRESSES["ALAGIRI PAPER MILLS"][type] || [];
+  
+  if (normalized.includes("DUPLEX")) {
+    if (normalized.includes("OFFICE") || (type === 'billTo' && !normalized.includes("FACTORY"))) {
+      return COMPANY_ADDRESSES["Alagiri Duplex Office"];
+    }
+    return COMPANY_ADDRESSES["Alagiri Duplex Factory"];
   }
-  if (normalized.includes("DUPLEX") || normalized === "ALAGIRI DUPLEX") {
-    return COMPANY_ADDRESSES["ALAGIRI DUPLEX"][type] || [];
+
+  if (normalized.includes("PAPER") || normalized.includes("MILL")) {
+    if (normalized.includes("OFFICE") || (type === 'billTo' && !normalized.includes("FACTORY"))) {
+      return COMPANY_ADDRESSES["Alagiri Paper Mill Office"];
+    }
+    return COMPANY_ADDRESSES["Alagiri Paper Mill Factory"];
   }
+
   return [companyName];
 };
 
@@ -65,8 +104,10 @@ export const CONFIG = {
     backgroundColor: "#f5ede6", // Cream/Beige background
     darkCharcoal: "#232120", // Bottom nav/button dark background
     billingLocations: [
-      "ALAGIRI PAPER MILLS",
-      "ALAGIRI DUPLEX"
+      "Alagiri Duplex Factory",
+      "Alagiri Duplex Office",
+      "Alagiri Paper Mill Factory",
+      "Alagiri Paper Mill Office"
     ]
   },
 
@@ -76,13 +117,15 @@ export const CONFIG = {
       name: "John Doe",
       role: "Employee",
       department: "Maintenance",
-      avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=John"
+      avatar: "",
+      profileColor: "black"
     },
     admin: {
       name: "Johnson",
       role: "Admin",
       department: "Procurement Manager",
-      avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=Johnson"
+      avatar: "",
+      profileColor: "black"
     }
   },
 
