@@ -111,7 +111,19 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
   return (
     <div>
       {/* Dashboard Header with Mill Mate Logo */}
-      <header className="app-header home-header">
+      <header 
+        className="app-header home-header" 
+        style={{ 
+          height: 'auto', 
+          minHeight: '60px', 
+          paddingTop: 'max(32px, calc(env(safe-area-inset-top, 0px) + 24px))', 
+          paddingBottom: '8px', 
+          marginBottom: '36px', 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center' 
+        }}
+      >
         <div className="header-left" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
           <img 
             src="/millmate-logo.png" 
@@ -5268,6 +5280,27 @@ export function RejectedOrdersView({ state, navigateTo }) {
 // 12. LOGIN VIEW COMPONENT
 // ----------------------------------------------------
 export function LoginView({ onLogin }) {
+  // Splash Screen Transition State (Small to Big)
+  const [showSplash, setShowSplash] = useState(true);
+  const [splashFading, setSplashFading] = useState(false);
+
+  useEffect(() => {
+    // Logo grows smoothly from small to big over 1.7s
+    const fadeTimer = setTimeout(() => {
+      setSplashFading(true);
+    }, 1700);
+
+    // Fade out and reveal sign in page
+    const removeTimer = setTimeout(() => {
+      setShowSplash(false);
+    }, 2250);
+
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(removeTimer);
+    };
+  }, []);
+
   // Login fields
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -5301,68 +5334,85 @@ export function LoginView({ onLogin }) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '80vh', justifyContent: 'center', padding: '20px' }}>
-      <div style={{ textAlign: 'center', marginBottom: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <div style={{
-          width: '84px',
-          height: '84px',
-          borderRadius: '20px',
-          overflow: 'hidden',
-          boxShadow: '0 8px 24px rgba(230, 126, 53, 0.22), 0 2px 8px rgba(0,0,0,0.05)',
-          marginBottom: '14px',
-          backgroundColor: '#ffffff',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: '1px solid rgba(0,0,0,0.06)',
-          padding: '6px'
-        }}>
+    <div className="login-view-container">
+      {/* Splash Transition (Logo grows smoothly from small to big) */}
+      {showSplash && (
+        <div 
+          className={`splash-screen-overlay ${splashFading ? 'fading' : ''}`}
+          onClick={() => { setSplashFading(true); setTimeout(() => setShowSplash(false), 200); }}
+        >
+          <div className="splash-logo-wrapper">
+            <img 
+              src="/millmate-icon.png" 
+              alt="Mill Mate" 
+              className="splash-logo-img" 
+            />
+          </div>
+        </div>
+      )}
+
+      <div className={`login-content-wrapper ${showSplash && !splashFading ? 'hidden' : 'visible'}`}>
+        <div style={{ textAlign: 'center', marginBottom: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <div style={{
+            width: '84px',
+            height: '84px',
+            borderRadius: '20px',
+            overflow: 'hidden',
+            boxShadow: '0 8px 24px rgba(230, 126, 53, 0.22), 0 2px 8px rgba(0,0,0,0.05)',
+            marginBottom: '14px',
+            backgroundColor: '#ffffff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '1px solid rgba(0,0,0,0.06)',
+            padding: '6px'
+          }}>
+            <img 
+              src="/millmate-icon.png" 
+              alt="Mill Mate Icon" 
+              style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+            />
+          </div>
           <img 
-            src="/millmate-icon.png" 
-            alt="Mill Mate Icon" 
-            style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+            src="/millmate-logo.png" 
+            alt="Mill Mate" 
+            style={{ height: '44px', maxWidth: '250px', objectFit: 'contain', marginBottom: '4px' }} 
           />
         </div>
-        <img 
-          src="/millmate-logo.png" 
-          alt="Mill Mate" 
-          style={{ height: '44px', maxWidth: '250px', objectFit: 'contain', marginBottom: '4px' }} 
-        />
 
-      </div>
-
-      <div style={{ background: 'var(--card-bg)', border: '1.5px solid var(--border-color)', borderRadius: 'var(--border-radius-lg)', padding: '24px', boxShadow: 'var(--shadow-md)' }}>
-        {error && (
-          <div key={errorKey} className="login-error-banner">
-            ⚠️ {error}
-          </div>
-        )}
-
-        {/* LOG IN FORM */}
-        <form onSubmit={handleLoginSubmit} style={{ textAlign: 'left' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: '800', marginBottom: '16px', color: 'var(--text-main)' }}>Sign In to your account</h2>
-          
-          <div className="form-group">
-            <label>Username</label>
-            <input type="text" className="form-control" placeholder="Enter Username" value={username} onChange={e => setUsername(e.target.value)} required style={{ cursor: 'text' }} />
-          </div>
-
-          <div className="form-group" style={{ marginBottom: '20px' }}>
-            <label>Password</label>
-            <div style={{ position: 'relative' }}>
-              <input type={showPassword ? "text" : "password"} className="form-control" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required style={{ cursor: 'text', paddingRight: '40px' }} />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', color: 'var(--text-muted)' }} title={showPassword ? "Hide password" : "Show password"}>
-                {showPassword ? <Icons.EyeSlash /> : <Icons.Eye />}
-              </button>
+        <div style={{ background: 'var(--card-bg)', border: '1.5px solid var(--border-color)', borderRadius: 'var(--border-radius-lg)', padding: '24px', boxShadow: 'var(--shadow-md)' }}>
+          {error && (
+            <div key={errorKey} className="login-error-banner">
+              ⚠️ {error}
             </div>
-          </div>
+          )}
 
-          <button type="submit" className="btn-orange" disabled={loading} style={{ width: '100%', padding: '12px', fontSize: '14px', cursor: 'pointer' }}>
-            {loading ? "Authenticating..." : "Login"}
-          </button>
-      </form>
+          {/* LOG IN FORM */}
+          <form onSubmit={handleLoginSubmit} style={{ textAlign: 'left' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: '800', marginBottom: '16px', color: 'var(--text-main)' }}>Sign In to your account</h2>
+            
+            <div className="form-group">
+              <label>Username</label>
+              <input type="text" className="form-control" placeholder="Enter Username" value={username} onChange={e => setUsername(e.target.value)} required style={{ cursor: 'text' }} />
+            </div>
+
+            <div className="form-group" style={{ marginBottom: '20px' }}>
+              <label>Password</label>
+              <div style={{ position: 'relative' }}>
+                <input type={showPassword ? "text" : "password"} className="form-control" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required style={{ cursor: 'text', paddingRight: '40px' }} />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', color: 'var(--text-muted)' }} title={showPassword ? "Hide password" : "Show password"}>
+                  {showPassword ? <Icons.EyeSlash /> : <Icons.Eye />}
+                </button>
+              </div>
+            </div>
+
+            <button type="submit" className="btn-orange" disabled={loading} style={{ width: '100%', padding: '12px', fontSize: '14px', cursor: 'pointer' }}>
+              {loading ? "Authenticating..." : "Login"}
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
-  </div>
   );
 }
 

@@ -715,7 +715,7 @@ export default function App() {
 
       {/* APP MOBILE VIEWPORT CONTAINER */}
       <div className="app-frame-wrapper">
-        <div className="device-frame">
+        <div className={`device-frame ${!currentUser ? 'auth-screen' : ''}`}>
 
           {/* Toast Notification Layers */}
           <div className="toast-container">

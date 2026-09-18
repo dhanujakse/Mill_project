@@ -82,6 +82,107 @@ body {
   flex-direction: column;
 }
 
+.device-frame.auth-screen {
+  background: linear-gradient(180deg, #F8EFE7 0%, #F5ECE2 50%, #EAE2D8 100%);
+}
+
+/* Splash Screen Transition (Small to Big) */
+.splash-screen-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #F8EFE7 0%, #F5ECE2 50%, #EAE2D8 100%);
+  opacity: 1;
+  transition: opacity 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: auto;
+  user-select: none;
+}
+
+.splash-screen-overlay.fading {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.splash-logo-wrapper {
+  width: 130px;
+  height: 130px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: splashLogoGrow 1.7s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  will-change: transform, opacity;
+  filter: drop-shadow(0 14px 28px rgba(230, 126, 53, 0.2)) drop-shadow(0 4px 10px rgba(0, 0, 0, 0.06));
+}
+
+.splash-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+@keyframes splashLogoGrow {
+  0% {
+    transform: scale(0.30);
+    opacity: 0;
+  }
+  15% {
+    transform: scale(0.42);
+    opacity: 1;
+  }
+  45% {
+    transform: scale(0.72);
+  }
+  75% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+.login-view-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 80vh;
+  justify-content: center;
+  padding: 10px 0;
+  position: relative;
+}
+
+.login-content-wrapper {
+  transition: opacity 0.45s ease;
+}
+
+.login-content-wrapper.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.login-content-wrapper.visible {
+  opacity: 1;
+  animation: loginContentFadeIn 0.5s ease-out forwards;
+}
+
+@keyframes loginContentFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Developer Console FAB & Sheet Drawer */
 .floating-dev-toggle {
   position: fixed;
@@ -216,15 +317,6 @@ body {
 
 .app-content::-webkit-scrollbar {
   display: none; /* Hide scrollbar for Chrome/Safari */
-}
-
-/* Home Page Header Spacing */
-.home-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-top: max(28px, calc(env(safe-area-inset-top, 0px) + 20px));
-  margin-bottom: 36px;
 }
 
 /* Right side - Simulation Panel */
@@ -532,6 +624,15 @@ body {
   padding: 0 4px;
   margin-bottom: 12px;
   user-select: none;
+}
+
+/* Home Page Header: override fixed height and add distinct top/bottom breathing space */
+.app-header.home-header {
+  height: auto;
+  min-height: 60px;
+  padding-top: max(32px, calc(env(safe-area-inset-top, 0px) + 24px));
+  padding-bottom: 6px;
+  margin-bottom: 36px;
 }
 
 .header-left {
