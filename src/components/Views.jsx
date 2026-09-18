@@ -1858,6 +1858,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
             const updatedReq = {
               ...req,
               status: "Rejected",
+              wasRejected: true,
               history: [...req.history, {
                 status: "Rejected",
                 updatedBy: user.name,
@@ -1892,7 +1893,9 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
     : null;
 
   useEffect(() => {
-    if (selectedReq && selectedReq.status !== "Pending") {
+    // Route non-Pending, non-Rejected requests to Live Order Details.
+    // Rejected orders must stay in RequestedOrdersView so admin can re-place them.
+    if (selectedReq && selectedReq.status !== "Pending" && selectedReq.status !== "Rejected") {
       navigateTo(`#order-details?id=${selectedReq.id}`);
     }
   }, [selectedReq, navigateTo]);
@@ -2085,8 +2088,15 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                   <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--primary-orange)' }}>
                     Request ID: {req.id}
                   </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                    {new Date(req.date).toLocaleDateString('en-GB')}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {req.status === 'Rejected' && (
+                      <span style={{ fontSize: '10px', fontWeight: '800', color: '#c53030', background: '#fff5f5', border: '1px solid #fed7d7', borderRadius: '6px', padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                        Re-order Required
+                      </span>
+                    )}
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                      {new Date(req.date).toLocaleDateString('en-GB')}
+                    </div>
                   </div>
                 </div>
                 
@@ -3097,6 +3107,15 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
   }
 
   if (req.status === "Pending") {
+    setTimeout(() => {
+      navigateTo(`#requested-orders?id=${req.id}`);
+    }, 0);
+    return null;
+  }
+
+  // Rejected orders must be handled in RequestedOrdersView (re-order workflow),
+  // NOT in the Live Order Details page.
+  if (req.status === "Rejected") {
     setTimeout(() => {
       navigateTo(`#requested-orders?id=${req.id}`);
     }, 0);
@@ -5073,7 +5092,11 @@ export function RejectedOrdersView({ state, navigateTo }) {
   const [searchQuery, setSearchQuery] = useState("");
 
   let filteredRequests = state.requests.filter(r => {
-    if (r.status !== "Rejected") return false;
+    // Show orders currently Rejected OR that were ever rejected (wasRejected flag)
+    // so that re-placed orders remain in history even after status changes.
+    const isCurrentlyRejected = r.status === "Rejected";
+    const wasEverRejected = r.wasRejected === true && r.history?.some(h => h.status === "Rejected");
+    if (!isCurrentlyRejected && !wasEverRejected) return false;
     if (r.deletedByUserIds && r.deletedByUserIds.includes(user.id)) return false;
     return true;
   });
@@ -5216,6 +5239,13 @@ export function RejectedOrdersView({ state, navigateTo }) {
                     Qty: <b>{req.qty} {req.units}</b> • Requested by: <b>{req.employeeName}</b>
                   </div>
                 </div>
+
+                {/* If order has been re-placed, show a green "Re-ordered" note */}
+                {req.status !== "Rejected" && (
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#f0fff4', border: '1px solid #9ae6b4', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: '800', color: '#276749', marginBottom: '10px' }}>
+                    ✓ Re-ordered — now in Live Orders ({req.status})
+                  </div>
+                )}
 
                 <div style={{ background: '#fff5f5', borderLeft: '3px solid var(--status-red)', padding: '10px 12px', borderRadius: '4px', fontSize: '13px', textAlign: 'left', marginBottom: '10px' }}>
                   <div style={{ fontWeight: '700', color: '#c53030', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
