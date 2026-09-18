@@ -118,14 +118,14 @@ export const CONFIG = {
       role: "Employee",
       department: "Maintenance",
       avatar: "",
-      profileColor: "black"
+      profileColor: "orange"
     },
     admin: {
       name: "Johnson",
       role: "Admin",
       department: "Procurement Manager",
       avatar: "",
-      profileColor: "black"
+      profileColor: "orange"
     }
   },
 

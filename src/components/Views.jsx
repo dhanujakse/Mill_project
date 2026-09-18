@@ -6326,14 +6326,14 @@ export function AvatarEditor({ user, onSave, onClose }) {
   const presetIcons = ["🤖", "🦊", "🦉", "🐯", "👷"];
 
   const buildPresetSvg = (icon, color) => {
-    const c = (color || "black").toLowerCase();
-    let fill = "#232120"; // black
+    const c = (color || "orange").toLowerCase();
+    let fill = "#ea580c"; // orange default
     let textColor = "#ffffff";
     let stroke = "none";
     let strokeWidth = "0";
 
-    if (c === "orange" || c === "#ea580c" || c === "#e67e35") {
-      fill = "#ea580c";
+    if (c === "black" || c === "#232120") {
+      fill = "#232120";
       textColor = "#ffffff";
     } else if (c === "white" || c === "#ffffff") {
       fill = "#ffffff";
