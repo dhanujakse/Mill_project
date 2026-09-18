@@ -218,6 +218,15 @@ body {
   display: none; /* Hide scrollbar for Chrome/Safari */
 }
 
+/* Home Page Header Spacing */
+.home-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
+  margin-bottom: 22px;
+}
+
 /* Right side - Simulation Panel */
 .simulator-panel {
   width: 480px;

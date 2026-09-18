@@ -111,7 +111,7 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
   return (
     <div>
       {/* Dashboard Header with Mill Mate Logo */}
-      <header className="app-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header className="app-header home-header">
         <div className="header-left" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
           <img 
             src="/millmate-logo.png" 
