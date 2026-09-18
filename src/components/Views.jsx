@@ -5328,9 +5328,7 @@ export function LoginView({ onLogin }) {
           alt="Mill Mate" 
           style={{ height: '44px', maxWidth: '250px', objectFit: 'contain', marginBottom: '4px' }} 
         />
-        <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '4px', letterSpacing: '0.3px' }}>
-          Paper Mills Procurement & Logistics
-        </p>
+
       </div>
 
       <div style={{ background: 'var(--card-bg)', border: '1.5px solid var(--border-color)', borderRadius: 'var(--border-radius-lg)', padding: '24px', boxShadow: 'var(--shadow-md)' }}>
