@@ -1888,7 +1888,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
             state.triggerWebhook("request.rejected", saved);
             
             closeModal();
-            navigateTo('#requested-orders');
+            navigateTo('#home');
           }} 
           style={{ width: '100%', cursor: 'pointer' }}
         >
@@ -3125,11 +3125,12 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
     return null;
   }
 
-  // Rejected orders must be handled in RequestedOrdersView (re-order workflow),
-  // NOT in the Live Order Details page.
+  // Rejected orders should redirect to Home page.
+  // The order is available in Requested Orders for re-placement, but
+  // after rejection we navigate to Home instead of directly into Requested Orders.
   if (req.status === "Rejected") {
     setTimeout(() => {
-      navigateTo(`#requested-orders?id=${req.id}`);
+      navigateTo('#home');
     }, 0);
     return null;
   }
@@ -3410,6 +3411,10 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
 
                 handleStatusChange(targetStatus, remarks.trim(), null, "", tempLrFile, tempLrFileName);
                 closeModal();
+                // After rejecting, navigate to Home page
+                if (isRejected) {
+                  setTimeout(() => navigateTo('#home'), 100);
+                }
               }}
             >
               {isRejected ? "Confirm Reject" : "Confirm Rollback"}
@@ -6220,7 +6225,7 @@ export function UserAvatar({ user, size = 40 }) {
     : (user.username ? user.username.slice(0, 1).toUpperCase() : "U");
 
   // Determine profile color choice: "black", "orange", or "white"
-  const colorKey = (user.profileColor || user.avatarColor || "black").toLowerCase();
+  const colorKey = (user.profileColor || user.avatarColor || "orange").toLowerCase();
 
   let bgColor = "#232120"; // default black
   let textColor = "#ffffff";
@@ -6268,7 +6273,7 @@ export function UserAvatar({ user, size = 40 }) {
 // 16. AVATAR / PROFILE COLOR EDITOR DRAWER COMPONENT
 // ----------------------------------------------------
 export function AvatarEditor({ user, onSave, onClose }) {
-  const initialColor = (user.profileColor || user.avatarColor || "black").toLowerCase();
+  const initialColor = (user.profileColor || user.avatarColor || "orange").toLowerCase();
   const [selectedColor, setSelectedColor] = useState(initialColor);
 
   const [selectedIcon, setSelectedIcon] = useState(() => {

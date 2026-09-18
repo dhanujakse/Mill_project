@@ -84,7 +84,7 @@ router.put('/:id', async (req, res) => {
       ? body.profileColor
       : (body.avatarColor !== undefined && body.avatarColor !== null && body.avatarColor !== ''
           ? body.avatarColor
-          : (currentProfile.profileColor || currentProfile.avatarColor || 'black'))
+          : (currentProfile.profileColor || currentProfile.avatarColor || 'orange'))
   ).toLowerCase();
 
   const nextProfile = {
