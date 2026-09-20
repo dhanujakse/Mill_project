@@ -4389,16 +4389,24 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
 
   const handleSaveAvatar = async (updatedUser) => {
     try {
-      const saved = await apiService.saveUser(updatedUser);
+      // Send only the avatar fields: re-sending the whole cached user made the
+      // server re-validate name/email/phone, which failed for accounts without
+      // an email or phone on file.
+      const saved = await apiService.saveUser({
+        id: updatedUser.id,
+        avatar: updatedUser.avatar,
+        avatarColor: updatedUser.avatarColor,
+        profileColor: updatedUser.profileColor
+      });
       const finalUser = saved && saved.id ? saved : updatedUser;
       state.setCurrentUser(finalUser);
       localStorage.setItem("pms_current_user", JSON.stringify(finalUser));
       state.showToast("Avatar Settings Saved", "Your avatar customization was updated successfully.", "success");
     } catch (err) {
+      // Don't pretend it saved: the change would vanish on the next reload.
       console.error("Failed to save avatar settings:", err);
-      state.setCurrentUser(updatedUser);
-      localStorage.setItem("pms_current_user", JSON.stringify(updatedUser));
-      state.showToast("Avatar Settings Saved", "Avatar settings saved.", "success");
+      state.showToast("Could Not Save Avatar", err.message || "Please try again.", "success");
+      return;
     }
     closeModal();
   };

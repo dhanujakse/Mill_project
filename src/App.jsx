@@ -123,6 +123,32 @@ export default function App() {
         return req;
       }
 
+      // A request still waiting for approval has no dispatch date to miss, so it
+      // is never auto-delayed (that used to hide it from the Approvals queue).
+      if (req.status === "Pending") {
+        return req;
+      }
+
+      // Repair requests the old logic flipped to Delayed before they were ever approved.
+      if (req.status === "Delayed" && !req.poNumber && getRevertStatus(req) === "Pending") {
+        delayModified = true;
+        const systemLog = {
+          status: "Pending",
+          updatedBy: "System (Auto)",
+          role: "System",
+          timestamp: now.toISOString(),
+          remarks: "Request restored to Pending: it was marked Delayed before it was approved."
+        };
+        const updatedReq = {
+          ...req,
+          status: "Pending",
+          history: [...(req.history || []), systemLog]
+        };
+
+        await apiService.updateRequest(req.id, updatedReq);
+        return updatedReq;
+      }
+
       let expDateStr = req.expectedDispatchDate ? req.expectedDispatchDate.split('T')[0] : null;
       if (!expDateStr) {
         const d = new Date(req.date);

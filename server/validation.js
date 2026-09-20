@@ -13,3 +13,8 @@ export const validateUserFields = ({ name, email, phone }) => {
   if (!PHONE_REGEX.test(phone.trim())) return 'Invalid Indian mobile number (must be a 10-digit number, optionally starting with +91).';
   return null;
 };
+
+// Request bodies are untrusted JSON: a field can arrive as a number, object or
+// array. Anything that isn't a string is treated as empty instead of being
+// passed to .trim() (which would throw).
+export const asText = (value) => (typeof value === 'string' ? value.trim() : '');
