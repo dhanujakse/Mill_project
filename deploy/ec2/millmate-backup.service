@@ -1,0 +1,12 @@
+[Unit]
+Description=Mill Mate database backup to S3
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=millmate
+Group=millmate
+WorkingDirectory=/opt/millmate/server
+EnvironmentFile=/etc/millmate.env
+ExecStart=/usr/bin/node scripts/backup-to-s3.mjs
