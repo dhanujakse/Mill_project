@@ -10,6 +10,8 @@ import departmentRoutes from './routes/departments.js';
 import notificationRoutes from './routes/notifications.js';
 import settingsRoutes from './routes/settings.js';
 import whatsappRoutes from './routes/whatsapp.js';
+import fileRoutes from './routes/files.js';
+import { s3Enabled, getBucket } from './storage.js';
 
 const app = express();
 // Render (and most PaaS hosts) terminate TLS at a proxy, so req.protocol/req.ip
@@ -37,6 +39,7 @@ app.use('/api/departments', departmentRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/files', fileRoutes);
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
@@ -47,4 +50,5 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`Alagiri backend listening on http://localhost:${PORT}`);
+  console.log(s3Enabled ? `File storage: S3 bucket "${getBucket()}"` : 'File storage: inline in the database (set S3_BUCKET to use S3)');
 });
