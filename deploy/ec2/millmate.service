@@ -1,0 +1,25 @@
+[Unit]
+Description=Mill Mate API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=millmate
+Group=millmate
+WorkingDirectory=/opt/millmate/server
+EnvironmentFile=/etc/millmate.env
+ExecStart=/usr/bin/node index.js
+# The API only ever talks to Caddy on this machine.
+Restart=always
+RestartSec=3
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/millmate /opt/millmate
+
+[Install]
+WantedBy=multi-user.target

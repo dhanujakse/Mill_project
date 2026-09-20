@@ -1,0 +1,4 @@
+# Files that run on Linux must keep LF line endings, even when edited on Windows
+# (a CRLF in a shell script or systemd unit breaks it with confusing errors).
+*.sh text eol=lf
+deploy/** text eol=lf

@@ -1,0 +1,23 @@
+{
+  "Rules": [
+    {
+      "ID": "expire-old-database-backups",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "backups/" },
+      "Expiration": { "Days": 60 },
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 7 }
+    },
+    {
+      "ID": "expire-replaced-attachment-versions",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "uploads/" },
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 30 }
+    },
+    {
+      "ID": "clean-up-failed-uploads",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "" },
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+    }
+  ]
+}

@@ -66,6 +66,8 @@ The server uses Node's built-in `node:sqlite` module instead of a native-compile
 
 ## Deployment
 
+> **Hosting on AWS (EC2 + S3): [docs/AWS_GUIDE.md](docs/AWS_GUIDE.md).**
+>
 > **Step-by-step release guide (Render persistent storage, Vercel, signed Android `.aab`, iOS build, store checklists): [docs/RELEASE_GUIDE.md](docs/RELEASE_GUIDE.md).**
 
 The backend needs a **persistent filesystem** to keep its SQLite database file across restarts/redeploys.

@@ -7,6 +7,8 @@ Sections 1 and 2 are the web deployment, 3 is Android, 4 is iOS, 5 is the store 
 
 ## 1. Backend on Render - persistent storage (do this first)
 
+> **Decision: the backend is moving to AWS (EC2 for the API, S3 for files and backups).** Follow [AWS_GUIDE.md](AWS_GUIDE.md) instead of this section. Keep this section only if you decide to stay on Render.
+
 The database is a SQLite **file**. Render's normal filesystem is temporary: every deploy or restart deletes it (this is why test orders kept vanishing). The fix is a **Disk**.
 
 > Render does not offer Disks on the free plan. You need at least the **Starter** instance (about 7 USD/month) plus a small disk (about 0.25 USD/GB/month, 1 GB is plenty).
