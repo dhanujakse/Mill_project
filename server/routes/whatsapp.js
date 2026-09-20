@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { sendAvailabilityRequest, sendFreeformText, logInbound, verifyWebhookChallenge, validateMetaSignature, toE164 } from '../whatsapp.js';
 
 const router = Router();
@@ -17,7 +18,7 @@ const saveRequestData = (id, status, data) => {
     .run(status || null, JSON.stringify(data), id);
 };
 
-router.post('/ask/:requestId', requireAuth, canAskSupplier, async (req, res) => {
+router.post('/ask/:requestId', requireAuth, canAskSupplier, asyncHandler(async (req, res) => {
   const row = db.prepare('SELECT * FROM requests WHERE id = ?').get(req.params.requestId);
   if (!row) return res.status(404).json({ error: 'Request not found' });
   const data = JSON.parse(row.data);
@@ -53,7 +54,7 @@ router.post('/ask/:requestId', requireAuth, canAskSupplier, async (req, res) => 
   };
   saveRequestData(row.id, row.status, updated);
   res.json(updated);
-});
+}));
 
 // One-time verification handshake Meta performs when you register/save the
 // webhook URL in the App Dashboard.
