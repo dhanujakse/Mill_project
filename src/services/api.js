@@ -35,6 +35,11 @@ export const getDelayStartDate = (dueDateStr) => {
 // ----------------------------------------------------
 const TOKEN_KEY = 'pms_auth_token';
 
+// Attachments are either an inline data URL ("data:...") or, when the server has
+// S3 storage enabled, a reference such as "s3:uploads/2026/09/<id>.pdf".
+export const isStoredFile = (value) => typeof value === 'string' && value.startsWith('s3:');
+let fileStorageMode = null; // 's3' | 'inline', asked from the server once per page load
+
 // Runtime-overridable (via Settings / localStorage) so a packaged mobile
 // build can point at a different backend without a rebuild; falls back to a
 // build-time env var, then to same-origin /api for a standard web deploy.
@@ -112,6 +117,36 @@ export const apiService = {
   // ------------------------------------------------
   async askSupplierAvailability(requestId) {
     return apiFetch(`/whatsapp/ask/${encodeURIComponent(requestId)}`, { method: 'POST' });
+  },
+
+  // ------------------------------------------------
+  // FILE STORAGE (attachments, LR copies, proof of receipt)
+  // ------------------------------------------------
+  // Uploads a data URL to the server's S3 storage and returns the short reference to
+  // keep in the record. Returns the value unchanged when it is already a reference or
+  // when the server keeps files inline (S3 not configured, or an older server).
+  async storeFile(value, name) {
+    if (typeof value !== 'string' || !value.startsWith('data:')) return value;
+
+    if (fileStorageMode === null) {
+      try {
+        fileStorageMode = (await apiFetch('/files/config')).storage;
+      } catch (err) {
+        if (!/\(404\)/.test(err.message)) throw err;
+        fileStorageMode = 'inline'; // older backend without the files API
+      }
+    }
+    if (fileStorageMode !== 's3') return value;
+
+    const { ref } = await apiFetch('/files', { method: 'POST', body: { dataUrl: value, name } });
+    return ref;
+  },
+
+  // Turns a stored reference into a short-lived link the browser can open.
+  async resolveFileUrl(value) {
+    if (!isStoredFile(value)) return value;
+    const { url } = await apiFetch(`/files/url?ref=${encodeURIComponent(value)}`);
+    return url;
   },
 
   // ------------------------------------------------

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { apiService } from '../services/api';
+import { apiService, isStoredFile } from '../services/api';
 import { CONFIG, COMPANY_ADDRESSES, COMPANY_OPTIONS, BILL_TO_OPTIONS, getShipToOptions, getCompanyAddress } from '../config';
 
 // ----------------------------------------------------
@@ -28,6 +28,32 @@ export const Icons = {
   Upload: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 16} height={p?.size || p?.height || 16} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
   Search: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 18} height={p?.size || p?.height || 18} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
 };
+
+// Largest attachment accepted (the server enforces the same limit).
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+const looksLikeImage = (value) =>
+  typeof value === 'string' && (value.startsWith('data:image') || /\.(png|jpe?g)$/i.test(value));
+
+// <img> for a stored file: inline data URLs render immediately, S3 references are
+// exchanged for a short-lived link first.
+function StoredImage({ value, ...imgProps }) {
+  const [src, setSrc] = useState(isStoredFile(value) ? '' : value);
+
+  useEffect(() => {
+    let active = true;
+    if (!isStoredFile(value)) {
+      setSrc(value);
+    } else {
+      apiService.resolveFileUrl(value)
+        .then((url) => { if (active) setSrc(url); })
+        .catch(() => { if (active) setSrc(''); });
+    }
+    return () => { active = false; };
+  }, [value]);
+
+  return src ? <img src={src} {...imgProps} /> : null;
+}
 
 // Helper format date
 const formatDate = (isoString) => {
@@ -667,6 +693,11 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       e.target.value = ""; // Clear input
       return;
     }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      state.showToast("File Too Large", "Please choose a file smaller than 10 MB.", "success");
+      e.target.value = "";
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -766,6 +797,8 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
     setIsSubmitting(true);
 
     try {
+      const imageRef = attachedFile ? await apiService.storeFile(attachedFile, attachedFileName || "attachment.jpg") : null;
+
       const items = products.map(p => ({
         productName: p.productName.trim(),
         qty: parseFloat(p.qty) || 1,
@@ -838,7 +871,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
             suggestedSupplierPhone: suggestedSupplierPhone || "",
             suggestedSupplierEmail: suggestedSupplierEmail || "",
             suggestedSupplierRemarks: suggestedSupplierRemarks || "",
-            image: attachedFile || original.image,
+            image: imageRef || original.image,
             imageName: attachedFileName || original.imageName,
             history: [...(original.history || []), ...editHistoryEntries]
           };
@@ -887,7 +920,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
         status: "Pending",
         dueDate: dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         priority: priority || "Normal",
-        image: attachedFile || null,
+        image: imageRef,
         imageName: attachedFileName || "",
         supplierId: "",
         poNumber: "",
@@ -3142,6 +3175,10 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
   const handleProofCamera = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      state.showToast("File Too Large", "Please choose a file smaller than 10 MB.", "success");
+      return;
+    }
     try {
       const reader = new FileReader();
       reader.onload = () => {
@@ -3159,6 +3196,10 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
   const handleProofGallery = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      state.showToast("File Too Large", "Please choose a file smaller than 10 MB.", "success");
+      return;
+    }
     try {
       const reader = new FileReader();
       reader.onload = () => {
@@ -3234,6 +3275,16 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
     if (!newStatus) return;
     const prevStatus = req.status;
 
+    let storedProof = null;
+    let storedLr = null;
+    try {
+      if (proofOfReceipt) storedProof = await apiService.storeFile(proofOfReceipt, proofOfReceiptName || "proof.jpg");
+      if (lrData) storedLr = await apiService.storeFile(lrData, lrName || "lr-copy.pdf");
+    } catch (err) {
+      state.showToast("Upload Failed", err.message || "Could not upload the file. Please try again.", "success");
+      return;
+    }
+
     let remarksStr = `Field [Status] modified from "${prevStatus}" to "${newStatus}".`;
     if (newStatus === "Received" && proofOfReceiptName) {
       remarksStr += ` Field [Proof of Receipt] modified from "None" to "${proofOfReceiptName}".`;
@@ -3254,9 +3305,9 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
       ...req,
       status: newStatus,
       history: updatedHistory,
-      proofOfReceipt: proofOfReceipt || req.proofOfReceipt || null,
+      proofOfReceipt: storedProof || req.proofOfReceipt || null,
       proofOfReceiptName: proofOfReceiptName || req.proofOfReceiptName || "",
-      lrCopy: lrData || req.lrCopy || null,
+      lrCopy: storedLr || req.lrCopy || null,
       lrFileName: lrName || req.lrFileName || "",
       expectedDispatchDate: newDispatchDate || req.expectedDispatchDate || expDateStr
     };
@@ -3439,6 +3490,11 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
       e.target.value = "";
       return;
     }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      state.showToast("File Too Large", "Please choose a file smaller than 10 MB.", "success");
+      e.target.value = "";
+      return;
+    }
 
     setSelectedFile(file);
     setSelectedFileName(file.name);
@@ -3449,7 +3505,13 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
 
     const reader = new FileReader();
     reader.onloadend = async () => {
-      const base64data = reader.result;
+      let lrRef;
+      try {
+        lrRef = await apiService.storeFile(reader.result, selectedFileName);
+      } catch (err) {
+        state.showToast("Upload Failed", err.message || "Could not upload the file. Please try again.", "success");
+        return;
+      }
       const remarksStr = `Field [Status] modified from "${req.status}" to "Booked". Field [LR Copy] modified from "None" to "${selectedFileName}".`;
       const updatedHistory = [...req.history, {
         status: "Booked",
@@ -3462,7 +3524,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
       const updatedReq = {
         ...req,
         status: "Booked",
-        lrCopy: base64data,
+        lrCopy: lrRef,
         lrFileName: selectedFileName,
         history: updatedHistory
       };
@@ -3480,14 +3542,21 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
     reader.readAsDataURL(selectedFile);
   };
 
-  const handleViewLr = () => {
+  const handleViewLr = async () => {
     if (!req.lrCopy) return;
+    let src;
+    try {
+      src = await apiService.resolveFileUrl(req.lrCopy);
+    } catch (err) {
+      state.showToast("Could Not Open File", err.message || "Please try again.", "success");
+      return;
+    }
     setModalContent(
       <div style={{ textAlign: 'center' }}>
-        {req.lrCopy.startsWith("data:image") ? (
-          <img src={req.lrCopy} style={{ maxWidth: '100%', borderRadius: '8px', border: '1px solid var(--border-color)' }} alt="LR Copy" />
+        {looksLikeImage(req.lrCopy) ? (
+          <img src={src} style={{ maxWidth: '100%', borderRadius: '8px', border: '1px solid var(--border-color)' }} alt="LR Copy" />
         ) : (
-          <iframe src={req.lrCopy} style={{ width: '100%', height: '350px', border: 'none' }} title="LR Document"></iframe>
+          <iframe src={src} style={{ width: '100%', height: '350px', border: 'none' }} title="LR Document"></iframe>
         )}
       </div>,
       "LR Consignment Preview"
@@ -3928,7 +3997,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
             <div style={{ fontWeight: '850', color: 'var(--status-green)', fontSize: '12px', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>
               ✓ Proof of Receipt Attached:
             </div>
-            <img src={req.proofOfReceipt} style={{ maxWidth: '100%', maxHeight: '180px', borderRadius: '8px', border: '1px solid var(--border-color)', objectFit: 'contain' }} alt="Proof of Receipt" />
+            <StoredImage value={req.proofOfReceipt} style={{ maxWidth: '100%', maxHeight: '180px', borderRadius: '8px', border: '1px solid var(--border-color)', objectFit: 'contain' }} alt="Proof of Receipt" />
           </div>
         )}
 
