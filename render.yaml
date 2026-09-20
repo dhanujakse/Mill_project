@@ -1,0 +1,52 @@
+# Render Blueprint for the API (server/). It documents the settings the backend needs.
+#
+# If the service "mill-project" already exists, DON'T create a new Blueprint from this
+# file - make the same changes on the existing service instead (see
+# docs/RELEASE_GUIDE.md, section 1). Use this file only to create the service from scratch.
+#
+# A persistent Disk is REQUIRED: the database is a SQLite file, and without a disk it is
+# wiped on every deploy/restart. Render does not offer disks on the free plan.
+
+services:
+  - type: web
+    name: mill-project
+    runtime: node
+    rootDir: server
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: mill-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      # node:sqlite needs Node 22.5 or newer.
+      - key: NODE_VERSION
+        value: 22.12.0
+      - key: DB_PATH
+        value: /var/data/alagiri.db
+      # Set once in the dashboard and never change it (changing it logs everyone out).
+      - key: JWT_SECRET
+        sync: false
+      # Only used the first time the database is created: password for the seeded admin
+      # and employee accounts. Pick a real one; the default is public in the repo.
+      - key: SEED_PASSWORD
+        sync: false
+      # Web app + the origins the Android/iOS app calls from. Comma separated, no spaces.
+      - key: CORS_ORIGIN
+        value: https://alagiri-mill.vercel.app,https://localhost,capacitor://localhost
+      # WhatsApp Cloud API (optional; leave empty to disable "Ask Supplier").
+      - key: META_ACCESS_TOKEN
+        sync: false
+      - key: META_PHONE_NUMBER_ID
+        sync: false
+      - key: META_WEBHOOK_VERIFY_TOKEN
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_AVAILABILITY_TEMPLATE_NAME
+        sync: false
+      - key: META_TEMPLATE_LANGUAGE
+        value: en_US

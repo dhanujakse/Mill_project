@@ -66,6 +66,8 @@ The server uses Node's built-in `node:sqlite` module instead of a native-compile
 
 ## Deployment
 
+> **Step-by-step release guide (Render persistent storage, Vercel, signed Android `.aab`, iOS build, store checklists): [docs/RELEASE_GUIDE.md](docs/RELEASE_GUIDE.md).**
+
 The backend needs a **persistent filesystem** to keep its SQLite database file across restarts/redeploys.
 
 - **Render, a VPS, Railway, Fly.io**: works well. Attach a persistent disk (Render calls this a "Disk") mounted so `server/data/` survives redeploys, or set `DB_PATH` to a path on that disk. Set `JWT_SECRET` and `CORS_ORIGIN` (your deployed frontend's URL) as environment variables.

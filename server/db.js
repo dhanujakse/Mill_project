@@ -13,6 +13,13 @@ const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const dbPath = process.env.DB_PATH || path.join(dataDir, 'alagiri.db');
+console.log(`Database file: ${dbPath}`);
+// Render sets RENDER=true. Without DB_PATH pointing at an attached Disk the
+// database sits on the instance's temporary filesystem and every deploy or
+// restart silently wipes all users, orders and suppliers.
+if (process.env.RENDER && !process.env.DB_PATH) {
+  console.warn('WARNING: running on Render without DB_PATH - data is NOT persistent and will be lost on the next deploy. Attach a Disk and set DB_PATH (see docs/RELEASE_GUIDE.md).');
+}
 export const db = new DatabaseSync(dbPath);
 db.exec('PRAGMA journal_mode = WAL');
 db.exec('PRAGMA foreign_keys = ON');
@@ -114,7 +121,9 @@ if (userCount === 0) {
     INSERT INTO users (id, username, password_hash, role, enabled, must_change_password, profile)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
-  const defaultHash = bcrypt.hashSync('Password123!', 10);
+  // SEED_PASSWORD lets a real deployment start with its own admin password
+  // instead of the well-known default below.
+  const defaultHash = bcrypt.hashSync(process.env.SEED_PASSWORD || 'Password123!', 10);
   insertUser.run(
     'usr-admin', 'admin', defaultHash, 'Main Admin', 1, 0,
     JSON.stringify({ name: 'Johnson', department: 'Executive Office', avatarType: 'initials', avatarSeed: 'Johnson' })
