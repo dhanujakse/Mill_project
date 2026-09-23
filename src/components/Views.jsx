@@ -235,7 +235,7 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
     boxShadow: 'var(--shadow-sm)'
   };
   const dashboardCardTitleStyle = { fontSize: 'clamp(17px, 5vw, 20px)', fontWeight: '800', color: 'var(--text-main)', whiteSpace: 'nowrap' };
-  const liveBadgeStyle = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: '28px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box', color: '#ffffff' };
+  const liveBadgeStyle = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: '40px', height: '40px', borderRadius: '8px', fontSize: '16px', fontWeight: '800', padding: '0 8px', boxSizing: 'border-box', color: '#ffffff' };
 
   return (
     <div>
@@ -288,13 +288,11 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
         style={dashboardCardStyle}
       >
         <div style={dashboardCardTitleStyle}>Live Orders</div>
-        {/* Wraps to a second row (still inside the fixed card height) only on very narrow screens */}
-        <div style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', maxWidth: '62%' }}>
-          <span style={{ ...liveBadgeStyle, background: '#FC0000' }} title="No Response">{noResponseCount}</span>
+        {/* Always exactly three badges: red = No Response, orange = Acknowledged, blue = Booked */}
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'flex-end', flexShrink: 0 }}>
+          <span style={{ ...liveBadgeStyle, background: '#FF0000' }} title="No Response">{noResponseCount}</span>
           <span style={{ ...liveBadgeStyle, background: '#F28C28' }} title="Acknowledged">{acknowledgedCount}</span>
-          <span style={{ ...liveBadgeStyle, background: '#1B1B1F' }} title="Booked">{bookedCount}</span>
-          {receivedCount > 0 && <span style={{ ...liveBadgeStyle, background: '#22C55E' }} title="Received">{receivedCount}</span>}
-          {delayedCount > 0 && <span style={{ ...liveBadgeStyle, background: '#F3C82A', color: '#000000' }} title="Delayed">{delayedCount}</span>}
+          <span style={{ ...liveBadgeStyle, background: '#2563EB' }} title="Booked">{bookedCount}</span>
         </div>
       </div>
 
@@ -405,7 +403,7 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
               style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 24px', cursor: 'pointer', borderBottom: '1.5px solid #f6f5f4' }}
             >
               <span style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#1B1B1F' }}></span>
+                <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#2563EB' }}></span>
                 Booked
               </span>
               <span style={{ background: '#f5efe9', color: '#2a2726', fontWeight: '800', fontSize: '13px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%' }}>
@@ -2843,7 +2841,7 @@ function StatusFilterButton({ tab, count, isActive, onClick, gridColumn }) {
   const statusColors = {
     "No Response": "#FC0000",
     "Acknowledged": "#F28C28",
-    "Booked": "#1B1B1F",
+    "Booked": "#2563EB",
     "Received": "#22C55E",
     "Delayed": "#F3C82A"
   };
@@ -3909,7 +3907,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
             "Pending": "#E67E22",
             "No Response": "#FC0000",
             "Acknowledged": "#F28C28",
-            "Booked": "#1B1B1F",
+            "Booked": "#2563EB",
             "Received": "#22C55E",
             "Delayed": "#F3C82A"
           };
@@ -4064,7 +4062,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
               const trackingStageColors = {
                 "Order Placed": "#FC0000",
                 "Acknowledged": "#F28C28",
-                "Booked": "#1B1B1F",
+                "Booked": "#2563EB",
                 "Received": "#22C55E"
               };
               
@@ -4195,7 +4193,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
               const stageColors = {
                 "No Response": "#FC0000",
                 "Acknowledged": "#F28C28",
-                "Booked": "#1B1B1F",
+                "Booked": "#2563EB",
                 "Received": "#22C55E"
               };
               const dotColor = stageColors[stage.status] || "var(--status-green)";
