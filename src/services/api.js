@@ -49,6 +49,23 @@ const getApiBaseUrl = () => {
   return (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
 };
 
+// Caches the signed-in user for the next app start. The server copy is the
+// source of truth (refreshed from /auth/me on load), so this must never throw:
+// a large profile photo used to exceed the WebView's storage quota, which
+// made a successful profile save look failed and logged the user out on the
+// next reload. If the full object doesn't fit, cache it without the photo.
+export const cacheCurrentUser = (user) => {
+  try {
+    localStorage.setItem('pms_current_user', JSON.stringify(user));
+  } catch {
+    try {
+      localStorage.setItem('pms_current_user', JSON.stringify({ ...user, avatar: '' }));
+    } catch (err) {
+      console.error('Could not cache the current user:', err);
+    }
+  }
+};
+
 export const getAuthToken = () => localStorage.getItem(TOKEN_KEY);
 const setAuthToken = (token) => localStorage.setItem(TOKEN_KEY, token);
 export const clearAuthToken = () => localStorage.removeItem(TOKEN_KEY);
