@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { apiService, isStoredFile } from '../services/api';
+import React, { useState, useEffect, useRef } from 'react';
+import { apiService, isStoredFile, cacheCurrentUser } from '../services/api';
 import { CONFIG, COMPANY_ADDRESSES, COMPANY_OPTIONS, BILL_TO_OPTIONS, getShipToOptions, getCompanyAddress } from '../config';
 
 // ----------------------------------------------------
@@ -55,10 +55,92 @@ function StoredImage({ value, ...imgProps }) {
   return src ? <img src={src} {...imgProps} /> : null;
 }
 
+// Keeps the line breaks a user typed into a multi-line description (only
+// Windows/Android CRLF pairs are folded into "\n"); never joins lines.
+const normalizeMultiline = (text) => String(text || '').replace(/\r\n?/g, '\n').trim();
+
+// Renders a multi-line description as one block per line, so line breaks
+// survive regardless of the surrounding white-space rules (print/PDF too).
+function MultilineText({ text, style }) {
+  const lines = normalizeMultiline(text).split('\n');
+  return (
+    <div style={style}>
+      {lines.map((line, i) => (
+        <div key={i} style={{ minHeight: '1em', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{line}</div>
+      ))}
+    </div>
+  );
+}
+
+// "2026-09-30" (or a full ISO timestamp) -> "30/09/2026". Parsed as a calendar
+// date, not through new Date(), so the day can't shift with the time zone.
+const formatDueDate = (value) => {
+  if (!value) return "";
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value));
+  if (match) return `${match[3]}/${match[2]}/${match[1]}`;
+  const d = new Date(value);
+  return isNaN(d) ? String(value) : d.toLocaleDateString('en-GB');
+};
+
 // Helper format date
 const formatDate = (isoString) => {
   return new Date(isoString).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 };
+
+// Suppliers that already rejected this order (recorded on every rejection),
+// so re-placing a rejected order never defaults back to one of them.
+const getRejectedSupplierIds = (r) => {
+  const ids = (r?.rejections || []).map(x => x.supplierId).filter(Boolean);
+  // Orders rejected before rejection records existed: the assigned supplier
+  // of a Rejected order that already had a PO is the one that rejected it.
+  if (!r?.rejections?.length && r?.status === "Rejected" && r?.poNumber && r?.supplierId) ids.push(r.supplierId);
+  return ids;
+};
+
+// Builds the record kept on the order for each rejection. The order itself is
+// never duplicated: the same entity moves Rejected -> Requested -> Live.
+const buildRejectionRecord = (req, supplier, user, reason) => ({
+  supplierId: req.supplierId || "",
+  supplierName: supplier?.companyName || req.suggestedSupplier || "",
+  poNumber: req.poNumber || "",
+  fromStatus: req.status,
+  reason,
+  rejectedBy: user.name,
+  role: user.role,
+  timestamp: new Date().toISOString()
+});
+
+// Latest rejection of an order: the rejection record when there is one,
+// otherwise the most recent "Rejected" history entry (older orders).
+const getLatestRejection = (r) => {
+  const records = r?.rejections || [];
+  if (records.length > 0) {
+    const last = records[records.length - 1];
+    return { rejectedBy: last.rejectedBy, reason: last.reason, timestamp: last.timestamp, supplierName: last.supplierName };
+  }
+  const entry = [...(r?.history || [])].reverse().find(h => h.status === "Rejected");
+  if (!entry) return null;
+  return { rejectedBy: entry.updatedBy, reason: entry.remarks, timestamp: entry.timestamp, supplierName: "" };
+};
+
+function RejectionBanner({ req }) {
+  const info = getLatestRejection(req);
+  if (!info) return null;
+  const when = info.timestamp ? new Date(info.timestamp).toLocaleString('en-GB') : new Date(req.date).toLocaleString('en-GB');
+  return (
+    <div style={{ background: '#fff5f5', borderLeft: '3px solid var(--status-red)', padding: '10px 12px', borderRadius: '4px', fontSize: '13px', textAlign: 'left', marginBottom: '12px', wordBreak: 'break-word' }}>
+      <div style={{ fontWeight: '700', color: '#c53030', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        Rejected By {info.rejectedBy || "Admin"} • {when}
+      </div>
+      {info.supplierName && (
+        <div style={{ color: '#742a2a', fontSize: '12px', fontWeight: '700', marginBottom: '2px' }}>Supplier: {info.supplierName}</div>
+      )}
+      <div style={{ color: '#742a2a', fontStyle: 'italic', lineHeight: '1.4' }}>
+        &ldquo;{info.reason || "No reason specified."}&rdquo;
+      </div>
+    </div>
+  );
+}
 
 const getRevertStatus = (r) => {
   if (r.history && r.history.length > 0) {
@@ -134,6 +216,27 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
 
   const hasUnread = state.notifications.some(n => !n.read && (n.role === "Both" || n.role === user.role));
 
+  // Requested Orders and Live Orders share one card shape (fixed height,
+  // padding and title style) so the dashboard reads as two equal tiles.
+  const dashboardCardStyle = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '12px',
+    cursor: 'pointer',
+    padding: '0 20px',
+    background: '#ffffff',
+    border: 'none',
+    borderRadius: '16px',
+    marginBottom: '28px',
+    width: '100%',
+    height: '88px',
+    boxSizing: 'border-box',
+    boxShadow: 'var(--shadow-sm)'
+  };
+  const dashboardCardTitleStyle = { fontSize: 'clamp(17px, 5vw, 20px)', fontWeight: '800', color: 'var(--text-main)', whiteSpace: 'nowrap' };
+  const liveBadgeStyle = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: '28px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box', color: '#ffffff' };
+
   return (
     <div>
       {/* Dashboard Header with Mill Mate Logo */}
@@ -154,7 +257,7 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
           <img 
             src="/millmate-logo.png" 
             alt="Mill Mate" 
-            style={{ height: '48px', maxWidth: '240px', objectFit: 'contain', display: 'block' }} 
+            style={{ height: '56px', maxWidth: '260px', objectFit: 'contain', display: 'block' }}
           />
         </div>
         <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -169,56 +272,29 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
       </header>
 
       {/* 1. Requested Orders Card */}
-      <div 
-        className="stat-card" 
-        onClick={() => navigateTo('#requested-orders')} 
-        style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center', 
-          cursor: 'pointer', 
-          padding: '24px', 
-          background: '#ffffff', 
-          border: 'none', 
-          borderRadius: '16px', 
-          marginBottom: '28px', 
-          width: '100%', 
-          minHeight: '80px',
-          boxSizing: 'border-box',
-          boxShadow: 'var(--shadow-sm)'
-        }}
+      <div
+        className="stat-card"
+        onClick={() => navigateTo('#requested-orders')}
+        style={dashboardCardStyle}
       >
-        <div style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-main)' }}>Requested orders</div>
-        <div style={{ fontSize: '28px', fontWeight: '800', color: 'var(--text-main)', minHeight: '32px', display: 'flex', alignItems: 'center' }}>{pendingCount}</div>
+        <div style={dashboardCardTitleStyle}>Requested orders</div>
+        <div style={{ fontSize: '28px', fontWeight: '800', color: 'var(--text-main)', lineHeight: '32px' }}>{pendingCount}</div>
       </div>
 
       {/* 2. Live Orders Card */}
-      <div 
-        className="stat-card" 
-        onClick={() => navigateTo('#live-orders')} 
-        style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center', 
-          cursor: 'pointer', 
-          padding: '24px', 
-          background: '#ffffff', 
-          border: 'none', 
-          borderRadius: '16px', 
-          marginBottom: '28px', 
-          width: '100%', 
-          minHeight: '80px',
-          boxSizing: 'border-box',
-          boxShadow: 'var(--shadow-sm)'
-        }}
+      <div
+        className="stat-card"
+        onClick={() => navigateTo('#live-orders')}
+        style={dashboardCardStyle}
       >
-        <div style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-main)' }}>Live Orders</div>
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#FC0000', color: '#ffffff', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="No Response">{noResponseCount}</span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#F28C28', color: '#ffffff', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="Acknowledged">{acknowledgedCount}</span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#2563EB', color: '#ffffff', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="Booked">{bookedCount}</span>
-          {receivedCount > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#22C55E', color: '#ffffff', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="Received">{receivedCount}</span>}
-          {delayedCount > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#F3C82A', color: '#000000', minWidth: '32px', height: '32px', borderRadius: '6px', fontSize: '13px', fontWeight: '800', padding: '0 6px', boxSizing: 'border-box' }} title="Delayed">{delayedCount}</span>}
+        <div style={dashboardCardTitleStyle}>Live Orders</div>
+        {/* Wraps to a second row (still inside the fixed card height) only on very narrow screens */}
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', maxWidth: '62%' }}>
+          <span style={{ ...liveBadgeStyle, background: '#FC0000' }} title="No Response">{noResponseCount}</span>
+          <span style={{ ...liveBadgeStyle, background: '#F28C28' }} title="Acknowledged">{acknowledgedCount}</span>
+          <span style={{ ...liveBadgeStyle, background: '#1B1B1F' }} title="Booked">{bookedCount}</span>
+          {receivedCount > 0 && <span style={{ ...liveBadgeStyle, background: '#22C55E' }} title="Received">{receivedCount}</span>}
+          {delayedCount > 0 && <span style={{ ...liveBadgeStyle, background: '#F3C82A', color: '#000000' }} title="Delayed">{delayedCount}</span>}
         </div>
       </div>
 
@@ -329,7 +405,7 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
               style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 24px', cursor: 'pointer', borderBottom: '1.5px solid #f6f5f4' }}
             >
               <span style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#2563EB' }}></span>
+                <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#1B1B1F' }}></span>
                 Booked
               </span>
               <span style={{ background: '#f5efe9', color: '#2a2726', fontWeight: '800', fontSize: '13px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%' }}>
@@ -439,6 +515,10 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
   const [attachedFile, setAttachedFile] = useState(null);
   const [attachedFileName, setAttachedFileName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // State updates are async, so two quick taps could both pass an
+  // isSubmitting check and place the same request twice; a ref blocks the
+  // second tap synchronously.
+  const submitLockRef = useRef(false);
 
   const addProduct = () => {
     setProducts(prev => [
@@ -737,7 +817,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
   const isEmployee = user.role === "Employee";
 
   const handleSubmit = async () => {
-    if (isSubmitting) return;
+    if (isSubmitting || submitLockRef.current) return;
 
     const newErrors = {};
     products.forEach((prod, index) => {
@@ -794,7 +874,21 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       return;
     }
 
+    submitLockRef.current = true;
     setIsSubmitting(true);
+
+    // Audit log / notification / webhook are secondary to the saved request:
+    // they run after navigation and a failure in one never keeps the user on
+    // this screen or stops the others.
+    const runAfterSave = (tasks) => {
+      tasks.forEach(task => {
+        try {
+          Promise.resolve(task()).catch(e => console.error("Post-save task failed:", e));
+        } catch (e) {
+          console.error("Post-save task failed:", e);
+        }
+      });
+    };
 
     try {
       const imageRef = attachedFile ? await apiService.storeFile(attachedFile, attachedFileName || "attachment.jpg") : null;
@@ -803,7 +897,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
         productName: p.productName.trim(),
         qty: parseFloat(p.qty) || 1,
         units: p.units,
-        description: (p.description || "").trim()
+        description: normalizeMultiline(p.description)
       }));
 
       const primaryProduct = items[0] || { productName: "", qty: 1, units: "Pieces", description: "" };
@@ -879,19 +973,18 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
           const saved = await apiService.updateRequest(cloneId, updatedReq);
           const finalSaved = (saved && saved.id) ? saved : updatedReq;
           state.setRequests(prev => (prev || []).map(r => r.id === cloneId ? finalSaved : r));
-          
+
+          // Saved in the database - go Home first, then the side effects.
+          navigateTo('#home');
           state.showToast("Success", `Request ${cloneId} revised and updated successfully.`, "success");
-          
-          try {
-            addNotification(
+          runAfterSave([
+            () => addNotification(
               "Request Revised",
               `Employee: ${user.name}\nRequest ID: ${cloneId}\nUpdated fields: ${editHistoryEntries.map(e => e.remarks.split(']')[0].replace('Field [', '')).join(', ')}`,
               "Admin"
-            );
-          } catch (e) {}
-
-          try { state.triggerWebhook("request.updated", finalSaved); } catch (e) {}
-          navigateTo('#home');
+            ),
+            () => state.triggerWebhook("request.updated", finalSaved)
+          ]);
           return;
         }
       }
@@ -918,7 +1011,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
         shipTo: shipTo || billTo,
         transportMode: transportMode.trim(),
         status: "Pending",
-        dueDate: dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        dueDate: dueDate || "", // only the date the user actually entered - the PO shows a note when none was given
         priority: priority || "Normal",
         image: imageRef,
         imageName: attachedFileName || "",
@@ -941,32 +1034,27 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
       const finalSaved = (saved && saved.id) ? saved : newReq;
       state.setRequests(prev => [finalSaved, ...(prev || []).filter(r => r.id !== finalSaved.id)]);
 
-      try {
-        state.logEvent("Created Request", "None", "Pending", `Created request ${reqId} for ${items.map(i => i.productName).join(', ')}.`);
-      } catch (e) {}
+      // The request is now in the database: always return Home right away,
+      // before any of the secondary work below.
+      navigateTo('#home');
+      state.showToast("Request Placed", `Request ${reqId} created successfully.`, "success");
 
       const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-      try {
-        addNotification(
+      runAfterSave([
+        () => state.logEvent("Created Request", "None", "Pending", `Created request ${reqId} for ${items.map(i => i.productName).join(', ')}.`),
+        () => addNotification(
           "New Request Created",
           `Employee: ${user.name}\nDept: ${user.department || "General"}\nTime: ${timeStr}\nPriority: ${priority}\nRequest ID: ${reqId}`,
           "Admin"
-        );
-      } catch (e) {}
-
-      try {
-        state.triggerWebhook("request.new", finalSaved);
-      } catch (e) {}
-
-      state.showToast("Request Placed", `Request ${reqId} created successfully.`, "success");
-
-      // Navigate back to Home Screen after successful database creation
-      navigateTo('#home');
+        ),
+        () => state.triggerWebhook("request.new", finalSaved)
+      ]);
     } catch (err) {
+      // Nothing was saved (or the save failed): stay on this screen with the
+      // form intact so the user can retry.
       console.error("Failed to place request:", err);
-      state.showToast("Error", err.message || "Failed to create request. Please try again.", "danger");
-      // Do not navigate if request creation failed
-    } finally {
+      state.showToast("Could Not Place Request", err.message || "Failed to create request. Please try again.", "success");
+      submitLockRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -1696,7 +1784,9 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
           billTo: req.billTo || BILL_TO_OPTIONS[0],
           shipTo: req.shipTo || req.billTo || BILL_TO_OPTIONS[0],
           transportMode: req.transportMode || "",
-          supplierId: req.supplierId || ""
+          // A rejected order comes back to be placed with another supplier,
+          // so don't pre-select the supplier that just rejected it.
+          supplierId: req.status === "Rejected" ? "" : (req.supplierId || "")
         };
       }
     });
@@ -1784,6 +1874,12 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
         return;
       }
 
+      const isReplacement = req.status === "Rejected";
+      if (isReplacement && getRejectedSupplierIds(req).includes(cardData.supplierId)) {
+        state.showToast("Choose Another Supplier", "This supplier already rejected this order. Please place it with a different supplier.", "success");
+        return;
+      }
+
       const user = state.currentUser;
       
       const fields = [
@@ -1830,7 +1926,9 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
           updatedBy: user.name,
           role: user.role,
           timestamp: now.toISOString(),
-          remarks: "Approved and PO generated (Order Placed)."
+          remarks: isReplacement
+            ? `Re-placed with another supplier after rejection. New PO generated (Order Placed).`
+            : "Approved and PO generated (Order Placed)."
         }
       ];
 
@@ -1854,16 +1952,28 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
         poNumber: `PO-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
         poDate: new Date().toISOString(),
         status: "No Response",
-        history: updatedHistory
+        history: updatedHistory,
+        // Re-placing a rejected order starts a fresh live cycle with the new
+        // supplier: drop the dispatch date, WhatsApp thread, LR copy and
+        // receipt data that belonged to the supplier who rejected it.
+        ...(isReplacement ? {
+          expectedDispatchDate: "",
+          supplierAsk: null,
+          lrCopy: null,
+          lrFileName: "",
+          proofOfReceipt: null,
+          proofOfReceiptName: "",
+          actualDeliveryDate: null
+        } : {})
       };
 
       const saved = await apiService.updateRequest(id, updatedReq);
       if (!saved) {
         throw new Error("Failed to update database. API returned empty response.");
       }
-      state.setRequests(state.requests.map(r => r.id === id ? saved : r));
+      state.setRequests(prev => prev.map(r => r.id === id ? saved : r));
 
-      state.logEvent("Approved Request & Edited", "Pending", "No Response", `Admin approved ${id}. Assigned Supplier ID: ${cardData.supplierId}`);
+      state.logEvent(isReplacement ? "Re-placed Rejected Order" : "Approved Request & Edited", req.status, "No Response", `Admin ${isReplacement ? 're-placed' : 'approved'} ${id}. Assigned Supplier ID: ${cardData.supplierId}`);
       addNotification("Request Approved", `${cardData.productName} requested by ${req.employeeName} has been approved.`, "Both");
 
       navigateTo(`#po-preview?id=${id}`);
@@ -1899,30 +2009,39 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
           onClick={async () => {
             const req = state.requests.find(r => r.id === id);
             const user = state.currentUser;
-            
+            const finalReason = (reason || "").trim() || "Denied by management.";
+            const supplier = state.suppliers.find(s => s.id === req.supplierId);
+
             const updatedReq = {
               ...req,
               status: "Rejected",
               wasRejected: true,
-              history: [...req.history, {
+              rejections: [...(req.rejections || []), buildRejectionRecord(req, supplier, user, finalReason)],
+              history: [...(req.history || []), {
                 status: "Rejected",
                 updatedBy: user.name,
                 role: user.role,
                 timestamp: new Date().toISOString(),
-                remarks: reason || "Denied by management."
+                remarks: finalReason
               }]
             };
 
-            const saved = await apiService.updateRequest(id, updatedReq);
-            state.setRequests(state.requests.map(r => r.id === id ? saved : r));
+            let saved;
+            try {
+              saved = await apiService.updateRequest(id, updatedReq);
+            } catch (err) {
+              state.showToast("Could Not Reject", err.message || "The rejection was not saved. Please try again.", "success");
+              return;
+            }
+            state.setRequests(prev => prev.map(r => r.id === id ? saved : r));
 
-            state.logEvent("Rejected Request", "Pending", "Rejected", `Admin rejected ${id}. Reason: ${reason}`);
-            addNotification("Request Rejected", `Request ${id} rejected. Reason: ${reason}`, "Both");
+            state.logEvent("Rejected Request", req.status, "Rejected", `Admin rejected ${id}. Reason: ${finalReason}`);
+            addNotification("Request Rejected", `Request ${id} rejected. Reason: ${finalReason}`, "Both");
             state.triggerWebhook("request.rejected", saved);
-            
+
             closeModal();
             navigateTo('#home');
-          }} 
+          }}
           style={{ width: '100%', cursor: 'pointer' }}
         >
           Confirm Reject
@@ -2074,24 +2193,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                     </span>
                   </div>
 
-{req.status === "Rejected" && (
-  (() => {
-    const rejectedByItem = req.history?.find(h => h.status === "Rejected") || {};
-    const rejectedBy = rejectedByItem.updatedBy || "Admin";
-    const rejectionReason = rejectedByItem.remarks || "No reason specified.";
-    const rejectionTime = rejectedByItem.timestamp ? new Date(rejectedByItem.timestamp).toLocaleString('en-GB') : new Date(req.date).toLocaleString('en-GB');
-    return (
-      <div style={{ background: '#fff5f5', borderLeft: '3px solid var(--status-red)', padding: '10px 12px', borderRadius: '4px', fontSize: '13px', textAlign: 'left', marginBottom: '12px' }}>
-        <div style={{ fontWeight: '700', color: '#c53030', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          Rejected By {rejectedBy} • {rejectionTime}
-        </div>
-        <div style={{ color: '#742a2a', fontStyle: 'italic', lineHeight: '1.4' }}>
-          “{rejectionReason}”
-        </div>
-      </div>
-    );
-  })()
-)}
+                  {req.status === "Rejected" && <RejectionBanner req={req} />}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
                     {reqItems.map((it, idx) => (
                       <div key={idx} style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '14px' }}>
@@ -2103,7 +2205,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                         </div>
                         {it.description && (
                           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                            <b>Description:</b> {it.description}
+                            <b>Description:</b><MultilineText text={it.description} />
                           </div>
                         )}
                       </div>
@@ -2144,7 +2246,9 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                     </div>
                   </div>
                 </div>
-                
+
+                {req.status === "Rejected" && <RejectionBanner req={req} />}
+
                 {/* Items List for Admin Editing */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
                   {currentItems.map((item, idx) => (
@@ -2264,20 +2368,58 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
 
                 {/* Supplier Section */}
                 {(() => {
-                  const matchingSupplier = state.suppliers.find(s => 
-                    (currentItems && currentItems.length > 0)
-                      ? currentItems.some(it => isSupplierMatchingProduct(s.products, it.productName))
-                      : isSupplierMatchingProduct(s.products, current.productName || req.productName)
+                  const rejectedSupplierIds = getRejectedSupplierIds(req);
+                  const matchingSupplier = state.suppliers.find(s =>
+                    !rejectedSupplierIds.includes(s.id) && (
+                      (currentItems && currentItems.length > 0)
+                        ? currentItems.some(it => isSupplierMatchingProduct(s.products, it.productName))
+                        : isSupplierMatchingProduct(s.products, current.productName || req.productName)
+                    )
                   );
 
                   const showSuggestion = !current.supplierId && matchingSupplier && !rejectedSuggestions[req.id];
                   const activeSupplier = showSuggestion ? matchingSupplier : state.suppliers.find(s => s.id === current.supplierId);
 
-                  const supplierDetailsText = activeSupplier ? [
-                    activeSupplier.contactPerson ? `Contact: ${activeSupplier.contactPerson}` : null,
-                    activeSupplier.phoneNumber || activeSupplier.whatsappNumber ? `Phone: ${activeSupplier.phoneNumber || activeSupplier.whatsappNumber}` : null,
-                    activeSupplier.address ? activeSupplier.address : null
-                  ].filter(Boolean).join(' • ') : null;
+                  // Supplier name stays prominent; contact/phone and address sit
+                  // underneath on their own lines in the secondary grey.
+                  const renderSupplierDetails = (sup) => {
+                    if (!sup) return null;
+                    const phone = sup.phoneNumber || sup.whatsappNumber;
+                    const contactLine = [
+                      sup.contactPerson ? `Contact: ${sup.contactPerson}` : null,
+                      phone ? `Phone: ${phone}` : null
+                    ].filter(Boolean).join(' • ');
+                    if (!contactLine && !sup.address) return null;
+                    return (
+                      <div style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-muted)', marginTop: '4px', lineHeight: '1.45', wordBreak: 'break-word' }}>
+                        {contactLine && <div>{contactLine}</div>}
+                        {sup.address && <div>{sup.address}</div>}
+                      </div>
+                    );
+                  };
+
+                  // Approve / Reject supplier: identical box, only the colour differs.
+                  const supplierDecisionButtonStyle = {
+                    flex: '1 1 0',
+                    minWidth: 0,
+                    height: '48px',
+                    padding: '6px 10px',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    lineHeight: '1.25',
+                    borderRadius: '12px',
+                    border: 'none',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    textAlign: 'center',
+                    boxSizing: 'border-box',
+                    overflow: 'hidden',
+                    wordBreak: 'break-word',
+                    transition: 'all 0.2s'
+                  };
 
                   return (
                     <div className="form-group" style={{ marginBottom: '20px' }}>
@@ -2286,71 +2428,33 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                         <div>
                           {/* Supplier Name & Details */}
                           <div style={{ marginBottom: '12px' }}>
-                            <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)' }}>
+                            <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', wordBreak: 'break-word' }}>
                               {matchingSupplier.companyName}
                             </div>
-                            {supplierDetailsText && (
-                              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '3px', lineHeight: '1.4' }}>
-                                {supplierDetailsText}
-                              </div>
-                            )}
+                            {renderSupplierDetails(matchingSupplier)}
                           </div>
 
                           {/* Matching Pair Buttons: Approve Supplier | Reject Supplier */}
                           <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
-                            <button 
-                              type="button" 
+                            <button
+                              type="button"
                               onClick={() => {
                                 updateCardField(req.id, "supplierId", matchingSupplier.id);
                                 state.showToast("Supplier Approved", `Supplier set to ${matchingSupplier.companyName}`, "info");
                               }}
-                              style={{ 
-                                flex: 1, 
-                                height: '44px',
-                                minHeight: '44px',
-                                padding: '8px 12px', 
-                                fontSize: '12px', 
-                                fontWeight: '700', 
-                                borderRadius: '12px',
-                                border: 'none',
-                                backgroundColor: 'var(--primary-orange)',
-                                color: '#ffffff',
-                                cursor: 'pointer', 
-                                display: 'inline-flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'center', 
-                                textAlign: 'center',
-                                boxSizing: 'border-box',
-                                transition: 'all 0.2s'
-                              }}
+                              style={{ ...supplierDecisionButtonStyle, backgroundColor: 'var(--primary-orange)' }}
                             >
-                              Approve Supplier: {matchingSupplier.companyName}
+                              <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                Approve Supplier: {matchingSupplier.companyName}
+                              </span>
                             </button>
-                            <button 
-                              type="button" 
+                            <button
+                              type="button"
                               onClick={() => {
                                 setRejectedSuggestions(prev => ({ ...prev, [req.id]: true }));
                                 updateCardField(req.id, "supplierId", "");
                               }}
-                              style={{ 
-                                flex: 1, 
-                                height: '44px',
-                                minHeight: '44px',
-                                padding: '8px 12px', 
-                                fontSize: '12px', 
-                                fontWeight: '700', 
-                                borderRadius: '12px',
-                                border: 'none',
-                                backgroundColor: '#4B5563', 
-                                color: '#ffffff',
-                                cursor: 'pointer', 
-                                display: 'inline-flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'center', 
-                                textAlign: 'center',
-                                boxSizing: 'border-box',
-                                transition: 'all 0.2s'
-                              }}
+                              style={{ ...supplierDecisionButtonStyle, backgroundColor: '#4B5563' }}
                             >
                               Reject Supplier
                             </button>
@@ -2358,20 +2462,28 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                         </div>
                       ) : (
                         <div>
-                          <select 
-                            className="form-control" 
-                            value={current.supplierId || ""} 
+                          <select
+                            className="form-control"
+                            value={current.supplierId || ""}
                             onChange={e => updateCardField(req.id, "supplierId", e.target.value)}
                             style={{ cursor: 'pointer' }}
                           >
                             <option value="">Choose Supplier</option>
-                            {state.suppliers.map(s => (
-                              <option key={s.id} value={s.id}>{s.companyName}</option>
-                            ))}
+                            {state.suppliers.map(s => {
+                              const alreadyRejected = rejectedSupplierIds.includes(s.id);
+                              return (
+                                <option key={s.id} value={s.id} disabled={alreadyRejected}>
+                                  {s.companyName}{alreadyRejected ? " (rejected this order)" : ""}
+                                </option>
+                              );
+                            })}
                           </select>
-                          {supplierDetailsText && (
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: '1.4' }}>
-                              {supplierDetailsText}
+                          {activeSupplier && (
+                            <div style={{ marginTop: '8px' }}>
+                              <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text-main)', wordBreak: 'break-word' }}>
+                                {activeSupplier.companyName}
+                              </div>
+                              {renderSupplierDetails(activeSupplier)}
                             </div>
                           )}
                         </div>
@@ -2459,14 +2571,14 @@ export function PoPreviewView({ state, navigateTo, requestId, addNotification })
   const billToLines = getCompanyAddress(req.billTo, 'billTo');
   const shipToLines = getCompanyAddress(req.shipTo || req.billTo, 'shipTo');
 
-  const formattedDueDate = req.dueDate ? new Date(req.dueDate).toLocaleDateString('en-GB') : "";
+  const formattedDueDate = formatDueDate(req.dueDate);
 
   const itemsSummaryText = items.map((it, idx) => 
-    `*Item ${idx + 1}:* ${it.productName}\n*Description:*\n${it.description || "N/A"}\n*Quantity:* ${it.qty} ${it.units}`
+    `*Item ${idx + 1}:* ${it.productName}\n*Description:*\n${normalizeMultiline(it.description) || "N/A"}\n*Quantity:* ${it.qty} ${it.units}`
   ).join('\n----------------------------------------\n');
 
   const formattedMsg = `*PURCHASE ORDER: ${req.poNumber}*
-PO Date: ${new Date(req.poDate).toLocaleDateString('en-GB')}${formattedDueDate ? `\nExpected Dispatch / Due Date: ${formattedDueDate}` : ""}
+PO Date: ${new Date(req.poDate).toLocaleDateString('en-GB')}${formattedDueDate ? `\nDue Date: ${formattedDueDate}` : ""}
 
 *BILL TO:*
 ${billToLines.join('\n')}
@@ -2482,7 +2594,7 @@ ${req.transportMode ? `\n*MODE OF TRANSPORT:* ${req.transportMode}` : ""}
 ----------------------------------------
 ${itemsSummaryText}
 ----------------------------------------
-${formattedDueDate ? `*Expected Dispatch Date:* ${formattedDueDate}\n----------------------------------------\n` : ""}*Instructions:* Please acknowledge receipt of this PO. Upload LR Copy once shipment is sent.`;
+${formattedDueDate ? `*Due Date:* ${formattedDueDate}\n----------------------------------------\n` : ""}*Instructions:* Please acknowledge receipt of this PO. Upload LR Copy once shipment is sent.`;
 
   const handleShareWhatsApp = async () => {
     const url = `https://api.whatsapp.com/send?phone=${supplierPhone}&text=${encodeURIComponent(formattedMsg)}`;
@@ -2551,7 +2663,7 @@ ${formattedDueDate ? `*Expected Dispatch Date:* ${formattedDueDate}\n-----------
               </div>
               {req.dueDate && (
                 <div style={{ fontSize: '12px', color: '#1f2937', marginTop: '3px' }}>
-                  <b>Due / Expected Dispatch:</b> <span style={{ fontWeight: '800', color: 'var(--primary-orange)' }}>{new Date(req.dueDate).toLocaleDateString('en-GB')}</span>
+                  <b>Due Date:</b> <span style={{ fontWeight: '800', color: 'var(--primary-orange)' }}>{formattedDueDate}</span>
                 </div>
               )}
             </div>
@@ -2596,7 +2708,7 @@ ${formattedDueDate ? `*Expected Dispatch Date:* ${formattedDueDate}\n-----------
             <thead>
               <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #d1d5db' }}>
                 <th style={{ fontSize: '12px', fontWeight: '800', padding: '10px', textAlign: 'left', color: '#374151' }}>Item</th>
-                <th style={{ fontSize: '12px', fontWeight: '800', padding: '10px', textAlign: 'right', color: '#374151', width: '140px' }}>Quantity</th>
+                <th style={{ fontSize: '12px', fontWeight: '800', padding: '10px', textAlign: 'right', color: '#374151', width: '1%', whiteSpace: 'nowrap' }}>Quantity</th>
               </tr>
             </thead>
             <tbody>
@@ -2630,11 +2742,11 @@ ${formattedDueDate ? `*Expected Dispatch Date:* ${formattedDueDate}\n-----------
                         <div style={{ fontSize: '11px', fontWeight: '800', color: '#6b7280', textTransform: 'uppercase', marginBottom: '4px', letterSpacing: '0.4px' }}>
                           Specifications / Description:
                         </div>
-                        <div style={{ whiteSpace: 'pre-wrap' }}>{item.description}</div>
+                        <MultilineText text={item.description} />
                       </div>
                     )}
                   </td>
-                  <td style={{ padding: '12px 10px', textAlign: 'right', verticalAlign: 'top', fontSize: '14px', fontWeight: '800', color: '#111827' }}>
+                  <td style={{ padding: '12px 10px', textAlign: 'right', verticalAlign: 'top', fontSize: '14px', fontWeight: '800', color: '#111827', whiteSpace: 'nowrap' }}>
                     {item.qty} {item.units}
                   </td>
                 </tr>
@@ -2644,7 +2756,7 @@ ${formattedDueDate ? `*Expected Dispatch Date:* ${formattedDueDate}\n-----------
 
           <div className="po-signature" style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px dashed #d1d5db', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
             <div style={{ fontSize: '12px', color: '#4b5563', textAlign: 'left' }}>
-              <div><b>Due Date / Expected Dispatch:</b> <span style={{ fontWeight: '800', color: '#111827' }}>{req.dueDate ? new Date(req.dueDate).toLocaleDateString('en-GB') : "Within 7 days of PO"}</span></div>
+              <div><b>Due Date:</b> <span style={{ fontWeight: '800', color: '#111827' }}>{formattedDueDate || "Within 7 days of PO"}</span></div>
               <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>Standard procurement terms apply</div>
             </div>
             <div style={{ textAlign: 'right' }}>
@@ -2731,7 +2843,7 @@ function StatusFilterButton({ tab, count, isActive, onClick, gridColumn }) {
   const statusColors = {
     "No Response": "#FC0000",
     "Acknowledged": "#F28C28",
-    "Booked": "#2563EB",
+    "Booked": "#1B1B1F",
     "Received": "#22C55E",
     "Delayed": "#F3C82A"
   };
@@ -3234,7 +3346,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
     if (req.expectedDispatchDate) {
       return req.expectedDispatchDate.split('T')[0];
     }
-    const d = new Date(req.date);
+    const d = new Date(req.poDate || req.date);
     d.setDate(d.getDate() + 3);
     return d.toISOString().split('T')[0];
   };
@@ -3282,7 +3394,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
       if (lrData) storedLr = await apiService.storeFile(lrData, lrName || "lr-copy.pdf");
     } catch (err) {
       state.showToast("Upload Failed", err.message || "Could not upload the file. Please try again.", "success");
-      return;
+      return false;
     }
 
     let remarksStr = `Field [Status] modified from "${prevStatus}" to "${newStatus}".`;
@@ -3313,20 +3425,37 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
     };
 
     if (newStatus === "Received") {
-      updatedReq.actualDeliveryDate = new Date().toISOString();
+      // Keep the first delivery date if the order is marked Received again,
+      // so it doesn't jump around in Order History.
+      updatedReq.actualDeliveryDate = req.status === "Received" && req.actualDeliveryDate ? req.actualDeliveryDate : new Date().toISOString();
     }
 
-    const saved = await apiService.updateRequest(requestId, updatedReq);
-    state.setRequests(state.requests.map(r => r.id === requestId ? saved : r));
+    if (newStatus === "Rejected") {
+      // Same order entity goes to Rejected Orders AND back to Requested Orders
+      // (status "Rejected"), where it can be placed with another supplier.
+      updatedReq.wasRejected = true;
+      updatedReq.rejections = [...(req.rejections || []), buildRejectionRecord(req, state.suppliers.find(s => s.id === req.supplierId), state.currentUser, remarks || "Rejected")];
+    }
 
-    state.logEvent("Status Changed Manually", prevStatus, newStatus, remarksStr);
+    let saved;
+    try {
+      saved = await apiService.updateRequest(requestId, updatedReq);
+    } catch (err) {
+      state.showToast("Could Not Update Status", err.message || "The change was not saved. Please try again.", "success");
+      return false;
+    }
+    state.setRequests(prev => prev.map(r => r.id === requestId ? saved : r));
+
+    state.logEvent(newStatus === "Rejected" ? "Rejected Live Order" : "Status Changed Manually", prevStatus, newStatus, remarksStr);
     addNotification("Status Updated", `Order ${req.poNumber || requestId} status updated to ${newStatus}.`, "Both");
 
     let eventKey = "request.updated";
     if (newStatus === "Booked") eventKey = "request.transit";
     else if (newStatus === "Received") eventKey = "request.delivered";
+    else if (newStatus === "Rejected") eventKey = "request.rejected";
 
     state.triggerWebhook(eventKey, saved);
+    return true;
   };
 
   // Requirement 3 & 4: Status Transition Handler
@@ -3454,17 +3583,23 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
               type="button"
               className={isRejected ? "btn-dark" : "btn-orange"} 
               style={{ flex: 1.5, marginBottom: 0, padding: '10px 16px', height: '42px', fontSize: '13px', borderRadius: '8px', cursor: 'pointer', backgroundColor: isRejected ? 'var(--status-red)' : undefined }}
-              onClick={() => {
+              onClick={async () => {
                 if (!remarks || !remarks.trim()) {
                   setModalContent(renderModalBody("Remarks are required to proceed."));
                   return;
                 }
 
-                handleStatusChange(targetStatus, remarks.trim(), null, "", tempLrFile, tempLrFileName);
+                // Only leave this screen once the change is actually saved;
+                // on failure the modal stays open with the error.
+                const ok = await handleStatusChange(targetStatus, remarks.trim(), null, "", tempLrFile, tempLrFileName);
+                if (!ok) {
+                  setModalContent(renderModalBody("The change could not be saved. Please try again."));
+                  return;
+                }
                 closeModal();
-                // After rejecting, navigate to Home page
                 if (isRejected) {
-                  setTimeout(() => navigateTo('#home'), 100);
+                  state.showToast("Order Rejected", "Moved to Rejected Orders and returned to Requested Orders for another supplier.", "success");
+                  navigateTo('#home');
                 }
               }}
             >
@@ -3774,7 +3909,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
             "Pending": "#E67E22",
             "No Response": "#FC0000",
             "Acknowledged": "#F28C28",
-            "Booked": "#2563EB",
+            "Booked": "#1B1B1F",
             "Received": "#22C55E",
             "Delayed": "#F3C82A"
           };
@@ -3929,7 +4064,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
               const trackingStageColors = {
                 "Order Placed": "#FC0000",
                 "Acknowledged": "#F28C28",
-                "Booked": "#2563EB",
+                "Booked": "#1B1B1F",
                 "Received": "#22C55E"
               };
               
@@ -4060,7 +4195,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
               const stageColors = {
                 "No Response": "#FC0000",
                 "Acknowledged": "#F28C28",
-                "Booked": "#2563EB",
+                "Booked": "#1B1B1F",
                 "Received": "#22C55E"
               };
               const dotColor = stageColors[stage.status] || "var(--status-green)";
@@ -4173,7 +4308,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
                     </div>
                     {it.description && (
                       <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.5', marginTop: '6px', background: '#f8fafc', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                        <b>Description:</b> {it.description}
+                        <b>Description:</b><MultilineText text={it.description} />
                       </div>
                     )}
                   </div>
@@ -4457,32 +4592,40 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
   };
 
   const handleSaveAvatar = async (updatedUser) => {
+    let saved;
     try {
       // Send only the avatar fields: re-sending the whole cached user made the
       // server re-validate name/email/phone, which failed for accounts without
       // an email or phone on file.
-      const saved = await apiService.saveUser({
+      saved = await apiService.saveUser({
         id: updatedUser.id,
         avatar: updatedUser.avatar,
         avatarColor: updatedUser.avatarColor,
         profileColor: updatedUser.profileColor
       });
-      const finalUser = saved && saved.id ? saved : updatedUser;
-      state.setCurrentUser(finalUser);
-      localStorage.setItem("pms_current_user", JSON.stringify(finalUser));
-      state.showToast("Avatar Settings Saved", "Your avatar customization was updated successfully.", "success");
     } catch (err) {
       // Don't pretend it saved: the change would vanish on the next reload.
       console.error("Failed to save avatar settings:", err);
-      state.showToast("Could Not Save Avatar", err.message || "Please try again.", "success");
+      state.showToast("Could Not Save Changes", err.message || "Your profile was not updated. Please try again.", "success");
       return;
     }
+    if (!saved || !saved.id) {
+      state.showToast("Could Not Save Changes", "The server did not confirm the update. Please try again.", "success");
+      return;
+    }
+    // Show exactly what the server stored, so the UI, a page refresh and the
+    // next login all agree.
+    state.setCurrentUser(saved);
+    cacheCurrentUser(saved);
+    state.showToast("Profile Saved", "Your avatar changes were saved.", "success");
     closeModal();
   };
 
   const openAvatarModal = () => {
     setModalContent(
-      <AvatarEditor user={user} onSave={handleSaveAvatar} onClose={closeModal} />,
+      // Fresh key each time: otherwise React reuses the editor left over from
+      // the last opening, still showing that session's (possibly unsaved) picks.
+      <AvatarEditor key={`avatar-editor-${Date.now()}`} user={user} onSave={handleSaveAvatar} onClose={closeModal} />,
       "Customize Avatar"
     );
     openModal();
@@ -4539,7 +4682,7 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
           {user.role !== "Employee" && (
             <div className="settings-item" onClick={() => navigateTo('#settings/notifications')} style={{ cursor: 'pointer' }}>
               <div className="settings-item-left">
-                <Icons.Bell />
+                <Icons.Bell style={{ color: '#000000' }} />
                 <span className="settings-title">Notification Preferences</span>
               </div>
               <Icons.ChevronRight />
@@ -4571,18 +4714,9 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
             </div>
           </div>
         </div>
-
-        {/* Mill Mate App Brand Info */}
-        <div style={{ marginTop: '36px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', paddingBottom: '20px' }}>
-          <img 
-            src="/millmate-logo.png" 
-            alt="Mill Mate" 
-            style={{ height: '30px', maxWidth: '170px', objectFit: 'contain', opacity: 0.85, marginBottom: '6px', display: 'block', margin: '0 auto 6px auto' }} 
-          />
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', width: '100%' }}>
-            Mill Mate • Alagiri Duplex Paper Mills
-          </div>
-        </div>
+        {/* The decorative Mill Mate logo/tagline footer was removed: it had no
+            function (no links, version or settings) and duplicated the Home
+            header logo. */}
       </div>
     </div>
   );
@@ -5062,20 +5196,15 @@ export function OrderHistoryView({ state, navigateTo }) {
 
   const [searchQuery, setSearchQuery] = useState("");
 
-  const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
-  const isWithin14Days = (dateIso) => {
-    if (!dateIso) return true;
-    return (new Date() - new Date(dateIso)) <= fourteenDaysMs;
-  };
-
+  // Every order that reached Received / Completed belongs in history as soon
+  // as it is received (it used to appear only 14 days later). The list is
+  // derived from the persisted order status, so an order shows up exactly
+  // once no matter how often its status is saved. Rejected orders are not
+  // history: they are listed under Rejected Orders and wait in Requested
+  // Orders to be placed with another supplier.
   let filteredRequests = state.requests.filter(r => {
     if (isEmployee && r.employeeName !== user.name) return false;
-    
-    // Include Received if more than 14 days ago
-    if (r.status === "Received" && !isWithin14Days(r.actualDeliveryDate)) {
-      return true;
-    }
-    return r.status === "Rejected";
+    return r.status === "Received" || r.status === "Completed";
   });
 
   // Apply Smart Search
@@ -5088,8 +5217,9 @@ export function OrderHistoryView({ state, navigateTo }) {
     });
   }
 
+  // Most recently received first.
   const sorted = [...filteredRequests].sort((a, b) => {
-    return new Date(b.date) - new Date(a.date);
+    return new Date(b.actualDeliveryDate || b.date) - new Date(a.actualDeliveryDate || a.date);
   });
 
   return (
@@ -5161,8 +5291,14 @@ export function OrderHistoryView({ state, navigateTo }) {
                   Product name - <b>{req.productName}</b> ({req.qty} {req.units})
                 </div>
 
+                {req.actualDeliveryDate && (
+                  <div className="card-product-line">
+                    Received on - <b>{new Date(req.actualDeliveryDate).toLocaleDateString('en-GB')}</b>
+                  </div>
+                )}
+
                 <div className="card-status-line">
-                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{req.id}</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{req.poNumber || req.id}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span className={`status-badge ${req.status.toLowerCase().replace(/ /g, '')}`}>{req.status}</span>
                   </div>
@@ -5189,7 +5325,7 @@ export function RejectedOrdersView({ state, navigateTo }) {
     // Show orders currently Rejected OR that were ever rejected (wasRejected flag)
     // so that re-placed orders remain in history even after status changes.
     const isCurrentlyRejected = r.status === "Rejected";
-    const wasEverRejected = r.wasRejected === true && r.history?.some(h => h.status === "Rejected");
+    const wasEverRejected = r.wasRejected === true || (r.rejections || []).length > 0 || !!r.history?.some(h => h.status === "Rejected");
     if (!isCurrentlyRejected && !wasEverRejected) return false;
     if (r.deletedByUserIds && r.deletedByUserIds.includes(user.id)) return false;
     return true;
@@ -5285,13 +5421,7 @@ export function RejectedOrdersView({ state, navigateTo }) {
           </div>
         ) : (
           sorted.map(req => {
-            const rejectedByItem = req.history?.find(h => h.status === "Rejected") || {};
-            const rejectedBy = rejectedByItem.updatedBy || "Admin";
-            const rejectionReason = rejectedByItem.remarks || "No reason specified.";
-            const rejectionTime = rejectedByItem.timestamp 
-              ? new Date(rejectedByItem.timestamp).toLocaleString('en-GB') 
-              : new Date(req.date).toLocaleString('en-GB');
-
+            const currentSupplier = state.suppliers.find(s => s.id === req.supplierId);
             return (
               <div key={req.id} className="live-order-card" style={{ padding: '16px', position: 'relative' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
@@ -5334,21 +5464,21 @@ export function RejectedOrdersView({ state, navigateTo }) {
                   </div>
                 </div>
 
-                {/* If order has been re-placed, show a green "Re-ordered" note */}
-                {req.status !== "Rejected" && (
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#f0fff4', border: '1px solid #9ae6b4', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: '800', color: '#276749', marginBottom: '10px' }}>
-                    ✓ Re-ordered — now in Live Orders ({req.status})
+                {/* Where the same order is now: waiting in Requested Orders, or re-placed */}
+                {req.status === "Rejected" ? (
+                  <div
+                    onClick={() => navigateTo(`#requested-orders?id=${req.id}`)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#fffaf0', border: '1px solid #fbd38d', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: '800', color: '#9c4221', marginBottom: '10px', cursor: 'pointer' }}
+                  >
+                    ↺ Back in Requested Orders — awaiting another supplier
+                  </div>
+                ) : (
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#f0fff4', border: '1px solid #9ae6b4', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: '800', color: '#276749', marginBottom: '10px', wordBreak: 'break-word' }}>
+                    ✓ Re-placed{currentSupplier ? ` with ${currentSupplier.companyName}` : ''} — now {req.status === "Received" ? 'in Order History' : `in Live Orders (${req.status})`}
                   </div>
                 )}
 
-                <div style={{ background: '#fff5f5', borderLeft: '3px solid var(--status-red)', padding: '10px 12px', borderRadius: '4px', fontSize: '13px', textAlign: 'left', marginBottom: '10px' }}>
-                  <div style={{ fontWeight: '700', color: '#c53030', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Rejected By {rejectedBy} • {rejectionTime}
-                  </div>
-                  <div style={{ color: '#742a2a', fontStyle: 'italic', lineHeight: '1.4' }}>
-                    &ldquo;{rejectionReason}&rdquo;
-                  </div>
-                </div>
+                <RejectionBanner req={req} />
               </div>
             );
           })
@@ -6153,44 +6283,47 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
             return (
               <div key={u.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 'var(--border-radius-md)', padding: '16px', textAlign: 'left', opacity: u.disabled ? 0.6 : 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-                    {/* Left Side: Profile Icon + Name + Details */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
-                      <UserAvatar user={u} size={42} />
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontWeight: '800', fontSize: '15px', color: 'var(--text-main)', lineHeight: '1.2' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                    {/* Left Side: [Profile Icon] Name on one line, user details below the name */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                        <UserAvatar user={u} size={36} />
+                        <div style={{ fontWeight: '800', fontSize: '15px', color: 'var(--text-main)', lineHeight: '1.25', minWidth: 0, wordBreak: 'break-word' }}>
                           {u.name}
                         </div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px', lineHeight: '1.3' }}>
-                          @{u.username} • {u.role}{u.department ? ` (${u.department})` : ''}
-                        </div>
+                      </div>
+                      <div style={{ paddingLeft: '44px', fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', lineHeight: '1.4', wordBreak: 'break-word' }}>
+                        <div>@{u.username}</div>
+                        <div>{u.role}{u.department ? ` / ${u.department}` : ''}</div>
                       </div>
                     </div>
 
-                    {/* Right Side: 2-Row Action Buttons */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'stretch', flexShrink: 0, minWidth: '136px' }}>
+                    {/* Right Side: [Disable] [Edit] on top, [Reset Password] below */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'stretch', flexShrink: 0, width: '122px' }}>
                       {/* Row 1: Disable | Edit */}
-                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                      <div style={{ display: 'flex', gap: '6px' }}>
                         {u.role !== "Main Admin" && (
-                          <button 
+                          <button
                             className={u.disabled ? "btn-outlined-icon-power-green" : "btn-outlined-icon-power-red"}
-                            onClick={() => handleToggleDisable(u)} 
-                            style={{ 
-                              backgroundColor: 'transparent', 
-                              color: u.disabled ? 'var(--status-green)' : 'var(--status-red)', 
-                              border: u.disabled ? '1px solid var(--status-green)' : '1px solid var(--status-red)', 
-                              borderRadius: '6px', 
-                              padding: '4px 6px', 
-                              fontSize: '11px', 
-                              fontWeight: '700', 
-                              cursor: 'pointer', 
-                              display: 'inline-flex', 
-                              alignItems: 'center', 
+                            onClick={() => handleToggleDisable(u)}
+                            style={{
+                              backgroundColor: 'transparent',
+                              color: u.disabled ? 'var(--status-green)' : 'var(--status-red)',
+                              border: u.disabled ? '1px solid var(--status-green)' : '1px solid var(--status-red)',
+                              borderRadius: '6px',
+                              padding: '0 4px',
+                              fontSize: '11px',
+                              fontWeight: '700',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
                               justifyContent: 'center',
-                              gap: '3px', 
-                              height: '26px', 
-                              flex: 1,
-                              transition: 'all 0.2s' 
+                              gap: '3px',
+                              height: '30px',
+                              flex: '1 1 0',
+                              minWidth: 0,
+                              boxSizing: 'border-box',
+                              transition: 'all 0.2s'
                             }}
                             title={u.disabled ? "Enable Account" : "Disable Account"}
                           >
@@ -6198,25 +6331,27 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
                             <span>{u.disabled ? 'Enable' : 'Disable'}</span>
                           </button>
                         )}
-                        <button 
+                        <button
                           className="btn-outlined-icon-dark"
-                          onClick={() => handleEdit(u)} 
-                          style={{ 
-                            backgroundColor: 'transparent', 
-                            color: 'var(--dark-charcoal)', 
-                            border: '1px solid var(--dark-charcoal)', 
-                            borderRadius: '6px', 
-                            padding: '4px 6px', 
-                            fontSize: '11px', 
-                            fontWeight: '700', 
-                            cursor: 'pointer', 
-                            display: 'inline-flex', 
-                            alignItems: 'center', 
+                          onClick={() => handleEdit(u)}
+                          style={{
+                            backgroundColor: 'transparent',
+                            color: 'var(--dark-charcoal)',
+                            border: '1px solid var(--dark-charcoal)',
+                            borderRadius: '6px',
+                            padding: '0 4px',
+                            fontSize: '11px',
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
                             justifyContent: 'center',
-                            gap: '3px', 
-                            height: '26px', 
-                            flex: 1,
-                            transition: 'all 0.2s' 
+                            gap: '3px',
+                            height: '30px',
+                            flex: '1 1 0',
+                            minWidth: 0,
+                            boxSizing: 'border-box',
+                            transition: 'all 0.2s'
                           }}
                           title="Edit User Details"
                         >
@@ -6226,21 +6361,21 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
                       </div>
 
                       {/* Row 2: Reset Password (Full Width) */}
-                      <button 
-                        onClick={() => handleResetPassword(u)} 
-                        style={{ 
-                          backgroundColor: '#0D6EFD', 
-                          color: '#FFFFFF', 
-                          border: 'none', 
-                          borderRadius: '6px', 
-                          padding: '4px 8px', 
-                          fontSize: '11px', 
-                          fontWeight: '700', 
-                          cursor: 'pointer', 
-                          display: 'inline-flex', 
-                          alignItems: 'center', 
+                      <button
+                        onClick={() => handleResetPassword(u)}
+                        style={{
+                          backgroundColor: '#0D6EFD',
+                          color: '#FFFFFF',
+                          border: '1px solid #0D6EFD',
+                          borderRadius: '6px',
+                          padding: '0 4px',
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
                           justifyContent: 'center',
-                          height: '26px', 
+                          height: '30px',
                           width: '100%',
                           boxSizing: 'border-box',
                           transition: 'all 0.2s',
@@ -6274,6 +6409,32 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
 }
 
 // ----------------------------------------------------
+// AVATAR COLOR PALETTE (app brand colours only)
+// ----------------------------------------------------
+// `initialsBg` is what the initials avatar uses and `swatch` the colour shown
+// in the editor / preset icons - kept exactly as they were for Orange, which
+// the client approved as-is.
+const AVATAR_COLORS = [
+  { id: "yellow", name: "Yellow", initialsBg: "#F3C82A", swatch: "#F3C82A", text: "#232120" },
+  { id: "black", name: "Black", initialsBg: "#232120", swatch: "#232120", text: "#ffffff" },
+  { id: "orange", name: "Orange", initialsBg: "var(--primary-orange, #ea580c)", swatch: "#ea580c", text: "#ffffff" },
+  { id: "darkbrown", name: "Dark Brown", initialsBg: "#5C3A21", swatch: "#5C3A21", text: "#ffffff" }
+];
+
+// Maps any stored value (older saves used hex codes, "white", etc.) onto one
+// of the four palette ids; anything outside the palette shows as Orange.
+const normalizeAvatarColor = (value) => {
+  const key = String(value || "").toLowerCase().replace(/[\s_-]+/g, "");
+  if (key === "#e67e35" || key === "#ea580c") return "orange";
+  if (key === "#232120" || key === "#1b1b1f") return "black";
+  if (key === "#f3c82a") return "yellow";
+  if (key === "#5c3a21" || key === "brown") return "darkbrown";
+  return AVATAR_COLORS.some(c => c.id === key) ? key : "orange";
+};
+
+const getAvatarColor = (value) => AVATAR_COLORS.find(c => c.id === normalizeAvatarColor(value));
+
+// ----------------------------------------------------
 // 15. USER AVATAR HELPER COMPONENT
 // ----------------------------------------------------
 export function UserAvatar({ user, size = 40 }) {
@@ -6301,26 +6462,11 @@ export function UserAvatar({ user, size = 40 }) {
     ? user.name.trim().split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase()
     : (user.username ? user.username.slice(0, 1).toUpperCase() : "U");
 
-  // Determine profile color choice: "black", "orange", or "white"
-  const colorKey = (user.profileColor || user.avatarColor || "orange").toLowerCase();
-
-  let bgColor = "#232120"; // default black
-  let textColor = "#ffffff";
-  let borderColor = "1.5px solid rgba(0,0,0,0.15)";
-
-  if (colorKey === "orange" || colorKey === "#e67e35" || colorKey === "#ea580c") {
-    bgColor = "var(--primary-orange, #ea580c)";
-    textColor = "#ffffff";
-    borderColor = "1.5px solid rgba(0,0,0,0.1)";
-  } else if (colorKey === "white" || colorKey === "#ffffff") {
-    bgColor = "#ffffff";
-    textColor = "#232120";
-    borderColor = "1.5px solid #d1d5db";
-  } else {
-    bgColor = "#232120";
-    textColor = "#ffffff";
-    borderColor = "1.5px solid rgba(0,0,0,0.2)";
-  }
+  // Profile colour: one of Yellow / Black / Orange / Dark Brown
+  const color = getAvatarColor(user.profileColor || user.avatarColor);
+  const bgColor = color.initialsBg;
+  const textColor = color.text;
+  const borderColor = color.id === "orange" ? "1.5px solid rgba(0,0,0,0.1)" : "1.5px solid rgba(0,0,0,0.15)";
 
   return (
     <div
@@ -6350,8 +6496,9 @@ export function UserAvatar({ user, size = 40 }) {
 // 16. AVATAR / PROFILE COLOR EDITOR DRAWER COMPONENT
 // ----------------------------------------------------
 export function AvatarEditor({ user, onSave, onClose }) {
-  const initialColor = (user.profileColor || user.avatarColor || "orange").toLowerCase();
+  const initialColor = normalizeAvatarColor(user.profileColor || user.avatarColor);
   const [selectedColor, setSelectedColor] = useState(initialColor);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [selectedIcon, setSelectedIcon] = useState(() => {
     if (user.avatar && typeof user.avatar === 'string' && user.avatar.startsWith('data:image/svg')) {
@@ -6376,50 +6523,20 @@ export function AvatarEditor({ user, onSave, onClose }) {
     return "";
   });
 
-  const colorOptions = [
-    {
-      id: "black",
-      name: "Black",
-      bg: "#232120",
-      text: "#ffffff",
-      border: "1.5px solid #232120"
-    },
-    {
-      id: "orange",
-      name: "Orange",
-      bg: "#ea580c",
-      text: "#ffffff",
-      border: "1.5px solid #ea580c"
-    },
-    {
-      id: "white",
-      name: "White",
-      bg: "#ffffff",
-      text: "#232120",
-      border: "1.5px solid #d1d5db"
-    }
-  ];
+  // Yellow | Black | Orange | Dark Brown - the only avatar colours offered.
+  const colorOptions = AVATAR_COLORS.map(c => ({
+    id: c.id,
+    name: c.name,
+    bg: c.swatch,
+    text: c.text,
+    border: `1.5px solid ${c.swatch}`
+  }));
 
   const presetIcons = ["🤖", "🦊", "🦉", "🐯", "👷"];
 
   const buildPresetSvg = (icon, color) => {
-    const c = (color || "orange").toLowerCase();
-    let fill = "#ea580c"; // orange default
-    let textColor = "#ffffff";
-    let stroke = "none";
-    let strokeWidth = "0";
-
-    if (c === "black" || c === "#232120") {
-      fill = "#232120";
-      textColor = "#ffffff";
-    } else if (c === "white" || c === "#ffffff") {
-      fill = "#ffffff";
-      textColor = "#232120";
-      stroke = "#d1d5db";
-      strokeWidth = "4";
-    }
-
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}"/><text x="50" y="62" font-size="38" text-anchor="middle" dominant-baseline="middle">${icon}</text></svg>`;
+    const fill = getAvatarColor(color).swatch;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="${fill}" stroke="none" stroke-width="0"/><text x="50" y="62" font-size="38" text-anchor="middle" dominant-baseline="middle">${icon}</text></svg>`;
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   };
 
@@ -6448,28 +6565,60 @@ export function AvatarEditor({ user, onSave, onClose }) {
     setSelectedIcon(null);
   };
 
+  // A phone camera photo is several MB as base64. Saved as-is it overflowed the
+  // browser's storage for the cached session (so the change looked unsaved and
+  // the next reload logged the user out). An avatar only needs ~256px.
+  const resizeAvatarPhoto = (dataUrl) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 256;
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => reject(new Error("This image could not be read. Please choose a JPG or PNG photo."));
+    img.src = dataUrl;
+  });
+
+  const [photoError, setPhotoError] = useState("");
+
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setPhotoError("");
     const reader = new FileReader();
-    reader.onloadend = () => {
-      setSelectedIcon(null);
-      setCustomPhoto(reader.result);
+    reader.onloadend = async () => {
+      try {
+        const resized = await resizeAvatarPhoto(reader.result);
+        setSelectedIcon(null);
+        setCustomPhoto(resized);
+      } catch (err) {
+        setPhotoError(err.message);
+      }
     };
     reader.readAsDataURL(file);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (isSaving) return;
     const finalAvatar = customPhoto
       ? customPhoto
       : (selectedIcon ? buildPresetSvg(selectedIcon, selectedColor) : "");
 
-    onSave({
-      ...user,
-      avatar: finalAvatar,
-      avatarColor: selectedColor,
-      profileColor: selectedColor
-    });
+    setIsSaving(true);
+    try {
+      await onSave({
+        ...user,
+        avatar: finalAvatar,
+        avatarColor: selectedColor,
+        profileColor: selectedColor
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const previewUser = {
@@ -6501,8 +6650,8 @@ export function AvatarEditor({ user, onSave, onClose }) {
           Select one of the MillMate brand colors for your avatar.
         </p>
 
-        {/* 3 Colors: Black | Orange | White */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+        {/* 4 Colors: Yellow | Black | Orange | Dark Brown */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
           {colorOptions.map((opt) => {
             const isSelected = (selectedColor || "").toLowerCase() === opt.id.toLowerCase();
             return (
@@ -6515,7 +6664,8 @@ export function AvatarEditor({ user, onSave, onClose }) {
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  padding: '12px 8px',
+                  minWidth: 0,
+                  padding: '10px 4px',
                   borderRadius: '12px',
                   backgroundColor: isSelected ? 'rgba(230, 126, 53, 0.08)' : 'var(--card-bg)',
                   border: isSelected ? '2px solid var(--primary-orange)' : '1.5px solid var(--border-color)',
@@ -6552,9 +6702,11 @@ export function AvatarEditor({ user, onSave, onClose }) {
                 {/* Color Label */}
                 <span
                   style={{
-                    fontSize: '13px',
+                    fontSize: '12px',
                     fontWeight: isSelected ? '800' : '600',
-                    color: isSelected ? 'var(--primary-orange)' : 'var(--text-main)'
+                    color: isSelected ? 'var(--primary-orange)' : 'var(--text-main)',
+                    textAlign: 'center',
+                    lineHeight: '1.2'
                   }}
                 >
                   {opt.name}
@@ -6645,6 +6797,7 @@ export function AvatarEditor({ user, onSave, onClose }) {
           <input type="file" accept="image/*" onChange={handleFileUpload} style={{ cursor: 'pointer' }} />
           <span className="badge-view-lr">Browse</span>
         </div>
+        {photoError && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '6px' }}>{photoError}</div>}
       </div>
 
       {/* Action Buttons */}
@@ -6660,10 +6813,11 @@ export function AvatarEditor({ user, onSave, onClose }) {
         <button
           type="button"
           className="btn-orange"
-          style={{ flex: 1.5, cursor: 'pointer', marginBottom: 0 }}
+          style={{ flex: 1.5, cursor: isSaving ? 'not-allowed' : 'pointer', marginBottom: 0, opacity: isSaving ? 0.7 : 1 }}
           onClick={handleSave}
+          disabled={isSaving}
         >
-          Save Changes
+          {isSaving ? "Saving..." : "Save Changes"}
         </button>
       </div>
     </div>

@@ -9,6 +9,10 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 const router = Router();
 router.use(requireAuth);
 
+// The avatar palette offered in the app (Customize Avatar).
+const AVATAR_COLORS = ['yellow', 'black', 'orange', 'darkbrown'];
+const MAX_AVATAR_CHARS = 1024 * 1024;
+
 router.get('/', requireRole('Main Admin'), (req, res) => {
   const rows = db.prepare('SELECT * FROM users ORDER BY created_at ASC').all();
   res.json(rows.map(serializeUser));
@@ -87,13 +91,28 @@ router.put('/:id', asyncHandler(async (req, res) => {
     if (dup) return res.status(409).json({ error: 'Email address is already in use by another user.' });
   }
 
-  const chosenColor = (
+  // Avatar pictures are resized in the app to a small JPEG; anything this big
+  // is an unresized photo that would bloat every /auth/me response.
+  // (Only for a new picture: Edit User re-sends an already stored one as-is.)
+  if (typeof body.avatar === 'string' && body.avatar.length > MAX_AVATAR_CHARS && body.avatar !== currentProfile.avatar) {
+    return res.status(413).json({ error: 'Profile picture is too large. Please choose a smaller photo.' });
+  }
+
+  const requestedColor = (
     body.profileColor !== undefined && body.profileColor !== null && body.profileColor !== ''
       ? body.profileColor
       : (body.avatarColor !== undefined && body.avatarColor !== null && body.avatarColor !== ''
           ? body.avatarColor
-          : (currentProfile.profileColor || currentProfile.avatarColor || 'orange'))
-  ).toLowerCase();
+          : null)
+  );
+  const storedColor = String(currentProfile.profileColor || currentProfile.avatarColor || 'orange').toLowerCase();
+  // Edit User / Disable re-send the whole user object, including a colour
+  // saved before the palette existed (e.g. "white"); only a real change to an
+  // off-palette colour is refused.
+  if (requestedColor !== null && !AVATAR_COLORS.includes(requestedColor.toLowerCase()) && requestedColor.toLowerCase() !== storedColor) {
+    return res.status(400).json({ error: `Avatar colour must be one of: ${AVATAR_COLORS.join(', ')}.` });
+  }
+  const chosenColor = (requestedColor || currentProfile.profileColor || currentProfile.avatarColor || 'orange').toLowerCase();
 
   const nextProfile = {
     ...currentProfile,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { CONFIG } from './config';
-import { apiService, onUnauthorized, getAuthToken, clearAuthToken } from './services/api';
+import { apiService, onUnauthorized, getAuthToken, clearAuthToken, cacheCurrentUser } from './services/api';
 import {
   HomeView,
   CreateRequestView,
@@ -151,7 +151,9 @@ export default function App() {
 
       let expDateStr = req.expectedDispatchDate ? req.expectedDispatchDate.split('T')[0] : null;
       if (!expDateStr) {
-        const d = new Date(req.date);
+        // Counted from the PO (not the original request), so an order that
+        // was rejected and re-placed with another supplier gets a fresh window.
+        const d = new Date(req.poDate || req.date);
         d.setDate(d.getDate() + 3);
         expDateStr = d.toISOString().split('T')[0];
       }
@@ -277,7 +279,7 @@ export default function App() {
           try {
             const freshUser = await apiService.getCurrentUser();
             setCurrentUser(freshUser);
-            localStorage.setItem("pms_current_user", JSON.stringify(freshUser));
+            cacheCurrentUser(freshUser);
             setActiveRole(freshUser.role);
             await loadProtectedData(freshUser);
           } catch (err) {
@@ -613,7 +615,7 @@ export default function App() {
       return <LoginView onLogin={(user) => {
         setCurrentUser(user);
         setActiveRole(user.role);
-        localStorage.setItem("pms_current_user", JSON.stringify(user));
+        cacheCurrentUser(user);
         if (!user.mustChangePassword) loadProtectedData(user);
         window.location.hash = "#home";
       }} />;
@@ -623,7 +625,7 @@ export default function App() {
     if (currentUser.mustChangePassword) {
       return <ForceChangePasswordView key="force-change-password-view" state={navProps.state} user={currentUser} onPasswordChanged={(updatedUser) => {
         setCurrentUser(updatedUser);
-        localStorage.setItem("pms_current_user", JSON.stringify(updatedUser));
+        cacheCurrentUser(updatedUser);
         loadProtectedData(updatedUser);
         window.location.hash = "#home";
       }} />;
@@ -728,7 +730,7 @@ export default function App() {
 
       setCurrentUser(targetUser);
       setActiveRole(targetUser.role);
-      localStorage.setItem("pms_current_user", JSON.stringify(targetUser));
+      cacheCurrentUser(targetUser);
       showToast("User Session Toggled", `Switched active login session to: ${targetUser.name} (${targetUser.role})`, "info");
       window.location.hash = "#home";
     } catch (err) {
