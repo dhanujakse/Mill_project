@@ -57,8 +57,18 @@ export default function App() {
       return null;
     }
   });
-  // Navigation Router state
+  // Navigation Router state and history stack
   const [currentHash, setCurrentHash] = useState(window.location.hash || '#home');
+  const [navHistory, setNavHistory] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem('pms_nav_history');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [window.location.hash || '#home'];
+  });
 
   // Modal overlay state
   const [modalOpen, setModalOpen] = useState(false);
@@ -314,10 +324,27 @@ export default function App() {
 
     loadData();
 
-    // Hash router listener
+    // Hash router listener with stack-aware synchronization
     const handleHashChange = () => {
-      setCurrentHash(window.location.hash || '#home');
+      const newHash = window.location.hash || '#home';
+      setCurrentHash(newHash);
       setModalOpen(false); // Close modals on route change
+
+      setNavHistory(prev => {
+        // If user navigated back via browser/mobile button to previous entry:
+        if (prev.length >= 2 && prev[prev.length - 2] === newHash) {
+          const newStack = prev.slice(0, -1);
+          try { sessionStorage.setItem('pms_nav_history', JSON.stringify(newStack)); } catch (e) {}
+          return newStack;
+        }
+        if (prev[prev.length - 1] === newHash) {
+          return prev;
+        }
+        const newStack = [...prev, newHash];
+        const trimmed = newStack.length > 50 ? newStack.slice(-50) : newStack;
+        try { sessionStorage.setItem('pms_nav_history', JSON.stringify(trimmed)); } catch (e) {}
+        return trimmed;
+      });
     };
     window.addEventListener('hashchange', handleHashChange);
 
@@ -597,9 +624,45 @@ export default function App() {
         logout
       },
       navigateTo: (h) => {
-        window.location.hash = h;
-        setCurrentHash(h || '#home');
+        const target = h || '#home';
+        setNavHistory(prev => {
+          if (prev[prev.length - 1] === target) return prev;
+          const newStack = [...prev, target];
+          const trimmed = newStack.length > 50 ? newStack.slice(-50) : newStack;
+          try { sessionStorage.setItem('pms_nav_history', JSON.stringify(trimmed)); } catch (e) {}
+          return trimmed;
+        });
+        window.location.hash = target;
+        setCurrentHash(target);
         setModalOpen(false);
+      },
+      goBack: (fallback = '#home') => {
+        const current = window.location.hash || currentHash || '#home';
+        setNavHistory(prev => {
+          let prevIndex = -1;
+          for (let i = prev.length - 2; i >= 0; i--) {
+            if (prev[i] && prev[i] !== current) {
+              prevIndex = i;
+              break;
+            }
+          }
+
+          let target;
+          let newStack;
+          if (prevIndex >= 0) {
+            target = prev[prevIndex];
+            newStack = prev.slice(0, prevIndex + 1);
+          } else {
+            target = fallback;
+            newStack = [fallback];
+          }
+
+          try { sessionStorage.setItem('pms_nav_history', JSON.stringify(newStack)); } catch (e) {}
+          window.location.hash = target;
+          setCurrentHash(target);
+          setModalOpen(false);
+          return newStack;
+        });
       },
       addNotification,
       openModal: () => setModalOpen(true),

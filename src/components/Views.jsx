@@ -26,7 +26,8 @@ export const Icons = {
   Check: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 12} height={p?.size || p?.height || 12} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="20 6 9 17 4 12"/></svg>,
   Camera: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 16} height={p?.size || p?.height || 16} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>,
   Upload: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 16} height={p?.size || p?.height || 16} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
-  Search: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 18} height={p?.size || p?.height || 18} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+  Search: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 18} height={p?.size || p?.height || 18} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
+  Trash: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 18} height={p?.size || p?.height || 18} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
 };
 
 // Largest attachment accepted (the server enforces the same limit).
@@ -72,14 +73,21 @@ function MultilineText({ text, style }) {
   );
 }
 
-// "2026-09-30" (or a full ISO timestamp) -> "30/09/2026". Parsed as a calendar
-// date, not through new Date(), so the day can't shift with the time zone.
+// "2026-09-30" or "26/09/2026" (or ISO string) -> "26/09/2026". Parsed as a calendar
+// date so the day cannot shift with the time zone.
 const formatDueDate = (value) => {
   if (!value) return "";
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value));
-  if (match) return `${match[3]}/${match[2]}/${match[1]}`;
-  const d = new Date(value);
-  return isNaN(d) ? String(value) : d.toLocaleDateString('en-GB');
+  const str = String(value).trim();
+  const dmyMatch = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/.exec(str);
+  if (dmyMatch) {
+    return `${dmyMatch[1].padStart(2, '0')}/${dmyMatch[2].padStart(2, '0')}/${dmyMatch[3]}`;
+  }
+  const ymdMatch = /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/.exec(str);
+  if (ymdMatch) {
+    return `${ymdMatch[3].padStart(2, '0')}/${ymdMatch[2].padStart(2, '0')}/${ymdMatch[1]}`;
+  }
+  const d = new Date(str);
+  return isNaN(d) ? str : d.toLocaleDateString('en-GB');
 };
 
 // Helper format date
@@ -492,9 +500,9 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
 // ----------------------------------------------------
 // 2. CREATE REQUEST VIEW COMPONENT
 // ----------------------------------------------------
-export function CreateRequestView({ state, navigateTo, addNotification, openModal, closeModal, setModalContent, cloneId }) {
+export function CreateRequestView({ state, navigateTo, goBack, addNotification, openModal, closeModal, setModalContent, cloneId }) {
   const [products, setProducts] = useState([
-    { id: 1, productName: "", qty: "", units: "Pieces", description: "" }
+    { id: 1, productName: "", qty: "", units: "", description: "" }
   ]);
   const [listeningIndex, setListeningIndex] = useState(null);
   const [suggestedSupplier, setSuggestedSupplier] = useState("");
@@ -521,7 +529,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
   const addProduct = () => {
     setProducts(prev => [
       ...prev,
-      { id: Date.now() + Math.random(), productName: "", qty: "", units: "Pieces", description: "" }
+      { id: Date.now() + Math.random(), productName: "", qty: "", units: "", description: "" }
     ]);
   };
 
@@ -580,8 +588,8 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
           setProducts(clonedReq.items.map((it, idx) => ({
             id: idx + 1,
             productName: it.productName || "",
-            qty: it.qty ? String(it.qty) : "",
-            units: it.units || "Pieces",
+            qty: (it.qty !== undefined && it.qty !== null && it.qty !== "") ? String(it.qty) : (clonedReq.qty !== undefined && clonedReq.qty !== null ? String(clonedReq.qty) : ""),
+            units: it.units || clonedReq.units || "Pieces",
             description: it.description || ""
           })));
         } else {
@@ -589,7 +597,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
             {
               id: 1,
               productName: clonedReq.productName || "",
-              qty: clonedReq.qty ? String(clonedReq.qty) : "",
+              qty: (clonedReq.qty !== undefined && clonedReq.qty !== null && clonedReq.qty !== "") ? String(clonedReq.qty) : "",
               units: clonedReq.units || "Pieces",
               description: clonedReq.description || ""
             }
@@ -865,6 +873,9 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
     if (!shipTo || !validShipOptions.includes(shipTo)) {
       newErrors.shipTo = "Please select a valid Ship To location.";
     }
+    if (!dueDate || !dueDate.trim()) {
+      newErrors.dueDate = "Due Date is required.";
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -1100,7 +1111,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
     <div>
       <header className="app-header">
         <div className="header-left">
-          <button className="back-btn" onClick={() => navigateTo('#home')} style={{ cursor: 'pointer' }}>
+          <button className="back-btn" onClick={() => (goBack || navigateTo)('#home')} style={{ cursor: 'pointer' }}>
             <Icons.Back />
           </button>
           <h1 style={{ fontSize: '20px' }}>{cloneId ? "Revise Request" : "Create Request"}</h1>
@@ -1171,7 +1182,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
                 <input 
                   type="text" 
                   className="form-control" 
-                  placeholder="e.g. chain wheel" 
+                  placeholder="Enter product name" 
                   value={prod.productName} 
                   onChange={e => {
                     updateProduct(index, "productName", e.target.value);
@@ -1188,7 +1199,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
                   <input 
                     type="number" 
                     className="form-control" 
-                    placeholder="10" 
+                    placeholder="Enter quantity" 
                     value={prod.qty} 
                     onChange={e => {
                       updateProduct(index, "qty", e.target.value);
@@ -1207,8 +1218,9 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
                       updateProduct(index, "units", e.target.value);
                       validateProductField(index, "units", e.target.value);
                     }} 
-                    style={{ cursor: 'pointer', border: errors[`units_${index}`] ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)' }}
+                    style={{ cursor: 'pointer', border: errors[`units_${index}`] ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)', color: !prod.units ? 'var(--text-muted)' : 'inherit' }}
                   >
+                    <option value="" disabled>Select unit</option>
                     <option value="Pieces">Pieces</option>
                     <option value="Kg">Kg</option>
                     <option value="Litre">Litre</option>
@@ -1418,14 +1430,28 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
 
         <div className="form-row">
           <div className="form-group">
-            <label>Due Date</label>
+            <label>Due Date <span style={{ color: 'var(--status-red)' }}>*</span></label>
             <input 
               type="date" 
               className="form-control" 
               value={dueDate} 
-              onChange={e => setDueDate(e.target.value)} 
-              style={{ cursor: 'pointer' }} 
+              onChange={e => {
+                setDueDate(e.target.value);
+                if (errors.dueDate) {
+                  setErrors(prev => {
+                    const next = { ...prev };
+                    delete next.dueDate;
+                    return next;
+                  });
+                }
+              }} 
+              style={{ cursor: 'pointer', border: errors.dueDate ? '1.5px solid var(--status-red)' : undefined }} 
             />
+            {errors.dueDate && (
+              <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px' }}>
+                {errors.dueDate}
+              </div>
+            )}
           </div>
           <div className="form-group">
             <label>Importance</label>
@@ -1738,7 +1764,7 @@ export function SupplierPicker({ suppliers, currentSupplierId, onSelect, product
 // ----------------------------------------------------
 // 3. REQUESTED ORDERS VIEW (ADMIN APPROVALS)
 // ----------------------------------------------------
-export function RequestedOrdersView({ state, navigateTo, addNotification, openModal, closeModal, setModalContent }) {
+export function RequestedOrdersView({ state, navigateTo, goBack, addNotification, openModal, closeModal, setModalContent }) {
   const user = state.currentUser;
   const pendingRequests = state.requests.filter(r => (r.status === "Pending" || r.status === "Rejected") && (!r.deletedByUserIds || !r.deletedByUserIds.includes(user.id)));
   
@@ -1766,39 +1792,73 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  useEffect(() => {
-    const data = { ...formData };
-    state.requests.forEach(req => {
-      if (!data[req.id]) {
-        const reqItems = (req.items && req.items.length > 0)
-          ? req.items
-          : [{ productName: req.productName || "", qty: req.qty || 1, units: req.units || "pcs", description: req.description || "" }];
-        data[req.id] = {
-          productName: req.productName || reqItems[0].productName || "",
-          qty: req.qty || reqItems[0].qty || 1,
-          units: req.units || reqItems[0].units || "pcs",
-          description: req.description || reqItems[0].description || "",
-          items: reqItems,
-          billTo: req.billTo || BILL_TO_OPTIONS[0],
-          shipTo: req.shipTo || req.billTo || BILL_TO_OPTIONS[0],
-          transportMode: req.transportMode || "",
-          // A rejected order comes back to be placed with another supplier,
-          // so don't pre-select the supplier that just rejected it.
-          supplierId: req.status === "Rejected" ? "" : (req.supplierId || "")
-        };
-      }
-    });
-    setFormData(data);
-  }, [state.requests, state.suppliers]);
+  const getCardData = (reqId) => {
+    const req = state.requests.find(r => r.id && String(r.id).trim() === String(reqId).trim());
+    const reqItems = (req && req.items && req.items.length > 0)
+      ? req.items.map(it => ({ ...it, qty: (it.qty !== undefined && it.qty !== null && it.qty !== "") ? it.qty : (req.qty || 1) }))
+      : (req ? [{ productName: req.productName || "", qty: (req.qty !== undefined && req.qty !== null && req.qty !== "") ? req.qty : 1, units: req.units || "Pieces", description: req.description || "" }] : []);
+    
+    const saved = formData[reqId] || {};
+    const mergedItems = (saved.items && saved.items.length > 0)
+      ? saved.items
+      : reqItems;
+
+    const baseQty = (saved.qty !== undefined && saved.qty !== null && saved.qty !== "")
+      ? saved.qty
+      : ((req && req.qty !== undefined && req.qty !== null && req.qty !== "")
+          ? req.qty
+          : (mergedItems[0]?.qty || 1));
+
+    return {
+      productName: saved.productName || (req ? req.productName : "") || (mergedItems[0]?.productName || ""),
+      qty: baseQty,
+      units: saved.units || (req ? req.units : "") || (mergedItems[0]?.units || "Pieces"),
+      description: saved.description !== undefined ? saved.description : (req ? req.description : ""),
+      items: mergedItems,
+      billTo: saved.billTo || (req ? req.billTo : "") || BILL_TO_OPTIONS[0],
+      shipTo: saved.shipTo || (req ? (req.shipTo || req.billTo) : "") || BILL_TO_OPTIONS[0],
+      transportMode: saved.transportMode !== undefined ? saved.transportMode : (req ? (req.transportMode || "") : ""),
+      supplierId: saved.supplierId !== undefined ? saved.supplierId : ((req && req.status === "Rejected") ? "" : (req?.supplierId || "")),
+      dueDate: saved.dueDate !== undefined ? saved.dueDate : (req ? (req.dueDate || "") : ""),
+      priority: saved.priority !== undefined ? saved.priority : (req ? (req.priority || "Normal") : "Normal")
+    };
+  };
 
   const updateCardField = (id, field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [id]: {
-        ...prev[id],
-        [field]: value
+    setFormData(prev => {
+      const existing = prev[id] || getCardData(id);
+      return {
+        ...prev,
+        [id]: {
+          ...existing,
+          [field]: value
+        }
+      };
+    });
+  };
+
+  const updateCardItem = (id, itemIndex, itemField, val) => {
+    setFormData(prev => {
+      const existing = prev[id] || getCardData(id);
+      const itemsList = [...(existing.items || [])];
+      if (itemsList[itemIndex]) {
+        itemsList[itemIndex] = { ...itemsList[itemIndex], [itemField]: val };
       }
-    }));
+      const updatedCard = {
+        ...existing,
+        items: itemsList
+      };
+      if (itemIndex === 0) {
+        if (itemField === 'productName') updatedCard.productName = val;
+        if (itemField === 'qty') updatedCard.qty = val;
+        if (itemField === 'units') updatedCard.units = val;
+        if (itemField === 'description') updatedCard.description = val;
+      }
+      return {
+        ...prev,
+        [id]: updatedCard
+      };
+    });
   };
 
   const openSupplierPicker = (requestId) => {
@@ -1836,12 +1896,12 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
 
   const handleApprove = async (id) => {
     try {
-      let cardData = { ...(formData[id] || {}) };
       const req = state.requests.find(r => r.id && String(r.id).trim() === String(id).trim());
       if (!req) {
         state.showToast("Not Found", "Request not found in database.", "success");
         return;
       }
+      let cardData = getCardData(id);
 
       // Auto-register manual supplier if supplierId is empty but suggested supplier is provided
       let finalSupplierId = cardData.supplierId;
@@ -1867,7 +1927,10 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
         cardData.supplierId = finalSupplierId;
       }
 
-      if (!cardData || !cardData.productName || !cardData.qty || !cardData.supplierId || !cardData.billTo) {
+      const parsedQty = parseFloat(cardData.qty);
+      const validQty = !isNaN(parsedQty) && parsedQty > 0 ? parsedQty : (parseFloat(req.qty) || 1);
+
+      if (!cardData || !cardData.productName || !validQty || !cardData.supplierId || !cardData.billTo) {
         state.showToast("Validation Error", "Please ensure product name, quantity, supplier, and billing location are filled.", "success");
         return;
       }
@@ -1882,7 +1945,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
       
       const fields = [
         { name: "Product Name", prev: req.productName, current: cardData.productName, key: "productName" },
-        { name: "Quantity", prev: req.qty, current: parseFloat(cardData.qty), key: "qty" },
+        { name: "Quantity", prev: req.qty, current: validQty, key: "qty" },
         { name: "Units", prev: req.units, current: cardData.units, key: "units" },
         { name: "Description", prev: req.description, current: cardData.description, key: "description" },
         { name: "Bill To", prev: req.billTo, current: cardData.billTo, key: "billTo" },
@@ -1921,6 +1984,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
         ...editHistoryEntries,
         {
           status: "No Response",
+          userId: user.id,
           updatedBy: user.name,
           role: user.role,
           timestamp: now.toISOString(),
@@ -1931,15 +1995,20 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
       ];
 
       const cardItems = (cardData.items && cardData.items.length > 0)
-        ? cardData.items
+        ? cardData.items.map((it, idx) => ({
+            productName: (it.productName || (idx === 0 ? cardData.productName : "")).trim(),
+            qty: !isNaN(parseFloat(it.qty)) ? parseFloat(it.qty) : (idx === 0 ? validQty : 1),
+            units: it.units || (idx === 0 ? cardData.units : "Pieces"),
+            description: normalizeMultiline(it.description)
+          }))
         : (req.items && req.items.length > 0)
           ? req.items
-          : [{ productName: cardData.productName, qty: parseFloat(cardData.qty), units: cardData.units, description: cardData.description }];
+          : [{ productName: cardData.productName, qty: validQty, units: cardData.units, description: cardData.description }];
 
       const updatedReq = {
         ...req,
         productName: cardData.productName,
-        qty: parseFloat(cardData.qty),
+        qty: (cardItems[0] && cardItems[0].qty !== undefined) ? cardItems[0].qty : validQty,
         units: cardData.units,
         description: cardData.description,
         items: cardItems,
@@ -1947,6 +2016,8 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
         shipTo: cardData.shipTo || cardData.billTo,
         transportMode: (cardData.transportMode || "").trim(),
         supplierId: cardData.supplierId,
+        dueDate: cardData.dueDate || req.dueDate || "",
+        priority: cardData.priority || req.priority || "Normal",
         poNumber: `PO-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
         poDate: new Date().toISOString(),
         status: "No Response",
@@ -2050,6 +2121,139 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
     openModal();
   };
 
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+
+  const promptDeleteSingle = (reqToDelete) => {
+    setModalContent(
+      <div style={{ textAlign: 'left', fontFamily: 'var(--font-family)' }}>
+        <p style={{ fontSize: '14px', color: 'var(--text-main)', marginBottom: '20px', lineHeight: '1.5' }}>
+          Delete this requested order?
+        </p>
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <button 
+            type="button" 
+            onClick={closeModal}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#f3f4f6',
+              color: '#374151',
+              border: '1px solid #d1d5db',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: '700',
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+          <button 
+            type="button" 
+            onClick={async () => {
+              try {
+                await apiService.deleteRequest(reqToDelete.id);
+                state.setRequests(prev => (prev || []).filter(r => r.id !== reqToDelete.id));
+                setSelectedIds(prev => {
+                  const next = new Set(prev);
+                  next.delete(reqToDelete.id);
+                  if (next.size === 0) setIsSelectionMode(false);
+                  return next;
+                });
+                closeModal();
+                if (selectedRequestId === reqToDelete.id) {
+                  setSelectedRequestId(null);
+                  navigateTo('#requested-orders');
+                }
+                state.showToast("Deleted", `Request ${reqToDelete.id} deleted successfully.`, "success");
+              } catch (err) {
+                state.showToast("Delete Failed", err.message || "Failed to delete request.", "success");
+              }
+            }}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: 'var(--status-red, #dc2626)',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: '700',
+              cursor: 'pointer'
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      </div>,
+      "Delete Requested Order"
+    );
+    openModal();
+  };
+
+  const promptBulkDelete = () => {
+    if (selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    const idsArray = Array.from(selectedIds);
+    setModalContent(
+      <div style={{ textAlign: 'left', fontFamily: 'var(--font-family)' }}>
+        <p style={{ fontSize: '14px', color: 'var(--text-main)', marginBottom: '20px', lineHeight: '1.5' }}>
+          Delete {count} selected requested order{count > 1 ? 's' : ''}?
+        </p>
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <button 
+            type="button" 
+            onClick={closeModal}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#f3f4f6',
+              color: '#374151',
+              border: '1px solid #d1d5db',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: '700',
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+          <button 
+            type="button" 
+            onClick={async () => {
+              try {
+                await apiService.bulkDeleteRequests(idsArray);
+                const idsSet = new Set(idsArray);
+                state.setRequests(prev => (prev || []).filter(r => !idsSet.has(r.id)));
+                setSelectedIds(new Set());
+                setIsSelectionMode(false);
+                closeModal();
+                if (selectedRequestId && idsSet.has(selectedRequestId)) {
+                  setSelectedRequestId(null);
+                  navigateTo('#requested-orders');
+                }
+                state.showToast("Deleted", `${count} requested order${count > 1 ? 's' : ''} deleted.`, "success");
+              } catch (err) {
+                state.showToast("Delete Failed", err.message || "Failed to delete requests.", "success");
+              }
+            }}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: 'var(--status-red, #dc2626)',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: '700',
+              cursor: 'pointer'
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      </div>,
+      "Delete Requested Orders"
+    );
+    openModal();
+  };
+
   const selectedReq = selectedRequestId 
     ? state.requests.find(r => r.id && String(r.id).trim() === String(selectedRequestId).trim()) 
     : null;
@@ -2078,10 +2282,10 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
             className="back-btn" 
             onClick={() => {
               if (selectedRequestId) {
-                window.location.hash = '#requested-orders';
                 setSelectedRequestId(null);
+                (goBack || navigateTo)('#requested-orders');
               } else {
-                navigateTo('#home');
+                (goBack || navigateTo)('#home');
               }
             }} 
             style={{ cursor: 'pointer' }}
@@ -2116,42 +2320,198 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
               <p style={{ fontWeight: 600, marginTop: '8px' }}>No pending requested orders.</p>
             </div>
           ) : (
-            pendingRequests.map((req, idx) => (
-              <div 
-                key={req.id} 
-                className="requested-order-overview-card"
-                onClick={() => {
-                  window.location.hash = `#requested-orders?id=${req.id}`;
-                  setSelectedRequestId(req.id);
-                }}
-                style={{ 
-                  background: 'var(--card-bg)', 
-                  border: '1px solid var(--border-color)', 
-                  borderRadius: '16px', 
-                  padding: '16px', 
-                  marginBottom: '14px', 
-                  cursor: 'pointer',
-                  boxShadow: 'var(--shadow-sm)',
-                  textAlign: 'left',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--primary-orange)' }}>
-                    {req.id}
+            <>
+              {/* Select All and Selection Mode Toolbar */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', padding: '10px 14px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', boxShadow: 'var(--shadow-sm)' }}>
+                {!isSelectionMode ? (
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setIsSelectionMode(true);
+                      setSelectedIds(new Set(pendingRequests.map(r => r.id)));
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-main)',
+                      fontSize: '13px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      padding: '2px 0',
+                      display: 'inline-flex',
+                      alignItems: 'center'
+                    }}
+                  >
+                    Select All
+                  </button>
+                ) : (
+                  <>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', margin: 0 }}>
+                      <input 
+                        type="checkbox" 
+                        checked={pendingRequests.length > 0 && selectedIds.size === pendingRequests.length}
+                        onChange={() => {
+                          if (selectedIds.size === pendingRequests.length) {
+                            setSelectedIds(new Set());
+                            setIsSelectionMode(false);
+                          } else {
+                            setSelectedIds(new Set(pendingRequests.map(r => r.id)));
+                          }
+                        }}
+                        style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--primary-orange)' }}
+                      />
+                      Select All
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {selectedIds.size > 0 && (
+                        <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)' }}>
+                          {selectedIds.size} Selected
+                        </span>
+                      )}
+                      {selectedIds.size > 0 && (
+                        <button 
+                          type="button" 
+                          onClick={promptBulkDelete}
+                          title="Delete selected orders"
+                          aria-label="Delete selected orders"
+                          style={{
+                            backgroundColor: '#fee2e2',
+                            color: 'var(--status-red, #dc2626)',
+                            border: '1px solid #fca5a5',
+                            borderRadius: '8px',
+                            padding: '6px 10px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <Icons.Trash size={18} />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSelectionMode(false);
+                          setSelectedIds(new Set());
+                        }}
+                        title="Exit selection mode"
+                        aria-label="Exit selection mode"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          fontSize: '18px',
+                          fontWeight: '700',
+                          lineHeight: '1',
+                          cursor: 'pointer',
+                          padding: '4px 6px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {pendingRequests.map((req, idx) => (
+                <div 
+                  key={req.id} 
+                  className="requested-order-overview-card"
+                  onClick={() => {
+                    if (isSelectionMode) {
+                      setSelectedIds(prev => {
+                        const next = new Set(prev);
+                        if (next.has(req.id)) next.delete(req.id);
+                        else next.add(req.id);
+                        return next;
+                      });
+                    } else {
+                      window.location.hash = `#requested-orders?id=${req.id}`;
+                      setSelectedRequestId(req.id);
+                    }
+                  }}
+                  style={{ 
+                    background: 'var(--card-bg)', 
+                    border: (isSelectionMode && selectedIds.has(req.id)) ? '1.5px solid var(--primary-orange)' : '1px solid var(--border-color)', 
+                    borderRadius: '16px', 
+                    padding: '16px', 
+                    marginBottom: '14px', 
+                    cursor: 'pointer',
+                    boxShadow: 'var(--shadow-sm)',
+                    textAlign: 'left',
+                    transition: 'all 0.2s ease',
+                    position: 'relative'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {isSelectionMode && (
+                        <input 
+                          type="checkbox" 
+                          checked={selectedIds.has(req.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setSelectedIds(prev => {
+                              const next = new Set(prev);
+                              if (next.has(req.id)) next.delete(req.id);
+                              else next.add(req.id);
+                              return next;
+                            });
+                          }}
+                          style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--primary-orange)' }}
+                        />
+                      )}
+                      <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--primary-orange)' }}>
+                        {req.id}
+                      </div>
+                    </div>
+                    {!isSelectionMode && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          promptDeleteSingle(req);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--status-red, #dc2626)',
+                          cursor: 'pointer',
+                          padding: '4px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: '6px'
+                        }}
+                        title="Delete this requested order"
+                        aria-label="Delete this requested order"
+                      >
+                        <Icons.Trash size={16} />
+                      </button>
+                    )}
+                  </div>
+                  
+                  <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', marginBottom: '6px' }}>
+                    {req.productName} {req.items && req.items.length > 1 ? <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--primary-orange)', background: '#fff7ed', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fed7aa', marginLeft: '6px' }}>+{req.items.length - 1} more item{req.items.length > 2 ? 's' : ''}</span> : null} <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)' }}>({req.qty} {req.units})</span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: 'var(--text-muted)', paddingTop: '6px', borderTop: '1px dashed var(--border-color)' }}>
+                    <div>Requested by: <b style={{ color: 'var(--text-main)' }}>{req.employeeName || "Employee"}</b></div>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      {req.dueDate && <div>Due: <b style={{ color: 'var(--primary-orange)' }}>{formatDueDate(req.dueDate)}</b></div>}
+                      <div>Date: <b style={{ color: 'var(--text-main)' }}>{new Date(req.date).toLocaleDateString('en-GB')}</b></div>
+                    </div>
                   </div>
                 </div>
-                
-                <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', marginBottom: '6px' }}>
-                  {req.productName} {req.items && req.items.length > 1 ? <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--primary-orange)', background: '#fff7ed', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fed7aa', marginLeft: '6px' }}>+{req.items.length - 1} more item{req.items.length > 2 ? 's' : ''}</span> : null} <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)' }}>({req.qty} {req.units})</span>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: 'var(--text-muted)', paddingTop: '6px', borderTop: '1px dashed var(--border-color)' }}>
-                  <div>Requested by: <b style={{ color: 'var(--text-main)' }}>{req.employeeName || "Employee"}</b></div>
-                  <div>Date: <b style={{ color: 'var(--text-main)' }}>{new Date(req.date).toLocaleDateString('en-GB')}</b></div>
-                </div>
-              </div>
-            ))
+              ))}
+            </>
           )
         ) : (
           /* Request Details / Review Page for Selected Order */
@@ -2161,20 +2521,10 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
               ? req.items
               : [{ productName: req.productName || "", qty: req.qty || 1, units: req.units || "Pieces", description: req.description || "" }];
 
-            const current = formData[req.id] || { 
-              productName: req.productName, 
-              qty: req.qty, 
-              units: req.units, 
-              description: req.description, 
-              items: reqItems,
-              billTo: req.billTo || "ALAGIRI PAPER MILLS", 
-              shipTo: req.shipTo || req.billTo || "ALAGIRI PAPER MILLS",
-              transportMode: req.transportMode || "",
-              supplierId: "" 
-            };
-            const currentItems = (current.items && current.items.length > 0)
+            const current = getCardData(req.id);
+            const currentItems = current.items && current.items.length > 0
               ? current.items
-              : reqItems;
+              : [{ productName: current.productName || req.productName || "", qty: current.qty || req.qty || 1, units: current.units || req.units || "Pieces", description: current.description || req.description || "" }];
 
             const isEmployee = state.currentUser.role === 'Employee';
 
@@ -2186,16 +2536,18 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                     <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--primary-orange)' }}>
                       Request ID: {req.id}
                     </div>
-                    <span className={`status-badge ${req.status.toLowerCase().replace(/\s+/g, '-')}`} style={{ textTransform: 'uppercase', fontSize: '10px' }}>
-                      {req.status}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span className={`status-badge ${req.status.toLowerCase().replace(/\s+/g, '-')}`} style={{ textTransform: 'uppercase', fontSize: '10px' }}>
+                        {req.status}
+                      </span>
+                    </div>
                   </div>
 
                   {req.status === "Rejected" && <RejectionBanner req={req} />}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
-                    {reqItems.map((it, idx) => (
+                    {currentItems.map((it, idx) => (
                       <div key={idx} style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '14px' }}>
-                        {reqItems.length > 1 && (
+                        {currentItems.length > 1 && (
                           <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--primary-orange)', textTransform: 'uppercase', marginBottom: '4px' }}>Item {idx + 1}</div>
                         )}
                         <div style={{ fontSize: '17px', fontWeight: '800', color: 'var(--text-main)', marginBottom: '4px' }}>
@@ -2211,11 +2563,13 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                   </div>
 
                   <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '14px', marginBottom: '14px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <div><b>Bill To:</b> {req.billTo || BILL_TO_OPTIONS[0]}</div>
-                    <div><b>Ship To:</b> {req.shipTo || req.billTo || "ALAGIRI PAPER MILLS"}</div>
+                    <div><b>Bill To:</b> {current.billTo || req.billTo || BILL_TO_OPTIONS[0]}</div>
+                    <div><b>Ship To:</b> {current.shipTo || req.shipTo || req.billTo || "ALAGIRI PAPER MILLS"}</div>
                     {req.transportMode && <div><b>Suggest Transporter Name:</b> <span style={{ fontWeight: '800', color: 'var(--primary-orange)' }}>{req.transportMode}</span></div>}
                     <div><b>Requested By:</b> {req.employeeName || "Employee"}</div>
                     <div><b>Request Date:</b> {new Date(req.date).toLocaleDateString('en-GB')}</div>
+                    {req.dueDate && <div><b>Due Date:</b> <span style={{ fontWeight: '800', color: 'var(--primary-orange)' }}>{formatDueDate(req.dueDate)}</span></div>}
+                    {req.priority && <div><b>Importance:</b> <span style={{ fontWeight: '800', color: req.priority === 'Urgent' ? 'var(--status-red)' : 'var(--text-main)' }}>{req.priority}</span></div>}
                     {assignedSup && <div><b>Assigned Supplier:</b> {assignedSup.companyName}</div>}
                     {!assignedSup && req.suggestedSupplier && <div><b>Suggested Supplier:</b> {req.suggestedSupplier}</div>}
                   </div>
@@ -2262,13 +2616,9 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                         <input 
                           type="text" 
                           className="form-control" 
+                          placeholder="Enter product name"
                           value={item.productName} 
-                          onChange={e => {
-                            const updated = [...currentItems];
-                            updated[idx] = { ...updated[idx], productName: e.target.value };
-                            updateCardField(req.id, "items", updated);
-                            if (idx === 0) updateCardField(req.id, "productName", e.target.value);
-                          }} 
+                          onChange={e => updateCardItem(req.id, idx, "productName", e.target.value)} 
                         />
                       </div>
 
@@ -2278,13 +2628,9 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                           <input 
                             type="number" 
                             className="form-control" 
+                            placeholder="Enter quantity"
                             value={item.qty} 
-                            onChange={e => {
-                              const updated = [...currentItems];
-                              updated[idx] = { ...updated[idx], qty: e.target.value };
-                              updateCardField(req.id, "items", updated);
-                              if (idx === 0) updateCardField(req.id, "qty", e.target.value);
-                            }} 
+                            onChange={e => updateCardItem(req.id, idx, "qty", e.target.value)} 
                           />
                         </div>
                         <div className="form-group">
@@ -2293,13 +2639,9 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                             type="text" 
                             className="form-control" 
                             list="units-list" 
+                            placeholder="Units (e.g. Pieces)"
                             value={item.units} 
-                            onChange={e => {
-                              const updated = [...currentItems];
-                              updated[idx] = { ...updated[idx], units: e.target.value };
-                              updateCardField(req.id, "items", updated);
-                              if (idx === 0) updateCardField(req.id, "units", e.target.value);
-                            }} 
+                            onChange={e => updateCardItem(req.id, idx, "units", e.target.value)} 
                           />
                         </div>
                       </div>
@@ -2309,13 +2651,9 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                         <textarea 
                           className="form-control" 
                           rows="2" 
+                          placeholder="Enter item specifications..."
                           value={item.description} 
-                          onChange={e => {
-                            const updated = [...currentItems];
-                            updated[idx] = { ...updated[idx], description: e.target.value };
-                            updateCardField(req.id, "items", updated);
-                            if (idx === 0) updateCardField(req.id, "description", e.target.value);
-                          }}
+                          onChange={e => updateCardItem(req.id, idx, "description", e.target.value)}
                         ></textarea>
                       </div>
                     </div>
@@ -2362,6 +2700,32 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                     value={current.transportMode || ""} 
                     onChange={e => updateCardField(req.id, "transportMode", e.target.value)} 
                   />
+                </div>
+
+                {/* Due Date & Importance in Admin Review */}
+                <div className="form-row" style={{ marginBottom: '14px' }}>
+                  <div className="form-group">
+                    <label>Due Date</label>
+                    <input 
+                      type="date" 
+                      className="form-control" 
+                      value={current.dueDate || ""} 
+                      onChange={e => updateCardField(req.id, "dueDate", e.target.value)} 
+                      style={{ cursor: 'pointer' }} 
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Importance</label>
+                    <select 
+                      className="form-control" 
+                      value={current.priority || "Normal"} 
+                      onChange={e => updateCardField(req.id, "priority", e.target.value)} 
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <option value="Normal">Normal</option>
+                      <option value="Urgent">Urgent</option>
+                    </select>
+                  </div>
                 </div>
 
                 {/* Supplier Section */}
@@ -2554,7 +2918,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
 // ----------------------------------------------------
 // 4. PO PREVIEW VIEW COMPONENT
 // ----------------------------------------------------
-export function PoPreviewView({ state, navigateTo, requestId, addNotification }) {
+export function PoPreviewView({ state, navigateTo, goBack, requestId, addNotification }) {
   const req = state.requests.find(r => r.id && String(r.id).trim() === String(requestId).trim());
   if (state.initialLoading) return <p style={{ padding: '20px' }}>Loading PO details...</p>;
   if (!req) return <p style={{ padding: '20px' }}>Order not found</p>;
@@ -2570,6 +2934,7 @@ export function PoPreviewView({ state, navigateTo, requestId, addNotification })
   const shipToLines = getCompanyAddress(req.shipTo || req.billTo, 'shipTo');
 
   const formattedDueDate = formatDueDate(req.dueDate);
+  const isUrgent = (req.priority || "").trim().toLowerCase() === "urgent";
 
   const itemsSummaryText = items.map((it, idx) => 
     `*Item ${idx + 1}:* ${it.productName}\n*Description:*\n${normalizeMultiline(it.description) || "N/A"}\n*Quantity:* ${it.qty} ${it.units}`
@@ -2588,7 +2953,7 @@ ${shipToLines.join('\n')}
 ${supplier.companyName || "N/A"}
 ${supplier.address || ""}
 Ph: ${supplierPhone}
-${req.transportMode ? `\n*MODE OF TRANSPORT:* ${req.transportMode}` : ""}
+${req.transportMode ? `\n*MODE OF TRANSPORT:* ${req.transportMode}` : ""}${isUrgent ? `\n\n*URGENT ORDER*` : ""}${formattedDueDate ? `\n*BOOK ON OR BEFORE ${formattedDueDate}*` : ""}
 ----------------------------------------
 ${itemsSummaryText}
 ----------------------------------------
@@ -2624,7 +2989,7 @@ ${formattedDueDate ? `*Due Date:* ${formattedDueDate}\n-------------------------
     <div>
       <header className="app-header">
         <div className="header-left">
-          <button className="back-btn" onClick={() => navigateTo('#requested-orders')} style={{ cursor: 'pointer' }}>
+          <button className="back-btn" onClick={() => (goBack || navigateTo)('#requested-orders')} style={{ cursor: 'pointer' }}>
             <Icons.Back />
           </button>
           <h1 style={{ fontSize: '18px' }}>PO Preview</h1>
@@ -2701,6 +3066,33 @@ ${formattedDueDate ? `*Due Date:* ${formattedDueDate}\n-------------------------
             </div>
           )}
 
+          {/* Urgent Order & Booking Deadline */}
+          {(isUrgent || formattedDueDate || req.dueDate) && (
+            <div style={{ marginBottom: '16px', textAlign: 'left' }}>
+              {isUrgent && (
+                <div style={{ 
+                  color: '#dc2626', 
+                  fontSize: '14px', 
+                  fontWeight: '900', 
+                  letterSpacing: '0.5px', 
+                  marginBottom: (formattedDueDate || req.dueDate) ? '4px' : '0' 
+                }}>
+                  URGENT ORDER
+                </div>
+              )}
+              {(formattedDueDate || req.dueDate) && (
+                <div style={{ 
+                  color: '#111827', 
+                  fontSize: '13px', 
+                  fontWeight: '800', 
+                  letterSpacing: '0.3px' 
+                }}>
+                  BOOK ON OR BEFORE {formattedDueDate || req.dueDate}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Table of Items - Zero Pricing */}
           <table className="po-table" style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
             <thead>
@@ -2716,7 +3108,7 @@ ${formattedDueDate ? `*Due Date:* ${formattedDueDate}\n-------------------------
                     <div style={{ fontSize: '11px', color: 'var(--primary-orange)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
                       Item {idx + 1}
                     </div>
-                    <div style={{ fontSize: '15px', fontWeight: '800', color: '#111827', marginTop: '2px' }}>
+                    <div style={{ fontSize: '15px', fontWeight: '600', color: '#111827', marginTop: '2px' }}>
                       {item.productName}
                     </div>
                     {/* Product description is main information - larger and bold with multiline preservation */}
@@ -2744,7 +3136,7 @@ ${formattedDueDate ? `*Due Date:* ${formattedDueDate}\n-------------------------
                       </div>
                     )}
                   </td>
-                  <td style={{ padding: '12px 10px', textAlign: 'right', verticalAlign: 'top', fontSize: '14px', fontWeight: '800', color: '#111827', whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '12px 10px', textAlign: 'right', verticalAlign: 'top', fontSize: '14px', fontWeight: '500', color: '#111827', whiteSpace: 'nowrap' }}>
                     {item.qty} {item.units}
                   </td>
                 </tr>
@@ -2775,7 +3167,7 @@ ${formattedDueDate ? `*Due Date:* ${formattedDueDate}\n-------------------------
 // ----------------------------------------------------
 // 4B. PENDING ORDERS VIEW COMPONENT
 // ----------------------------------------------------
-export function PendingOrdersView({ state, navigateTo }) {
+export function PendingOrdersView({ state, navigateTo, goBack }) {
   const user = state.currentUser;
   const isEmployee = user.role === "Employee";
 
@@ -2789,7 +3181,7 @@ export function PendingOrdersView({ state, navigateTo }) {
     <div>
       <header className="app-header">
         <div className="header-left">
-          <button className="back-btn" onClick={() => navigateTo('#home')} style={{ cursor: 'pointer' }}>
+          <button className="back-btn" onClick={() => (goBack || navigateTo)('#home')} style={{ cursor: 'pointer' }}>
             <Icons.Back />
           </button>
           <h1 style={{ fontSize: '20px' }}>Pending Orders</h1>
@@ -2927,7 +3319,7 @@ function StatusFilterButton({ tab, count, isActive, onClick, gridColumn }) {
 // ----------------------------------------------------
 // 5. LIVE ORDERS VIEW COMPONENT
 // ----------------------------------------------------
-export function LiveOrdersView({ state, navigateTo }) {
+export function LiveOrdersView({ state, navigateTo, goBack }) {
   const user = state.currentUser;
   const isEmployee = user.role === "Employee";
 
@@ -3018,7 +3410,7 @@ export function LiveOrdersView({ state, navigateTo }) {
     <div>
       <header className="app-header">
         <div className="header-left">
-          <button className="back-btn" onClick={() => navigateTo('#home')} style={{ cursor: 'pointer' }}>
+          <button className="back-btn" onClick={() => (goBack || navigateTo)('#home')} style={{ cursor: 'pointer' }}>
             <Icons.Back />
           </button>
           <h1 style={{ fontSize: '20px' }}>Live orders</h1>
@@ -3194,7 +3586,7 @@ export function LiveOrdersView({ state, navigateTo }) {
   );
 }
 
-export function OrderDetailsView({ state, navigateTo, requestId, addNotification, openModal, closeModal, setModalContent }) {
+export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNotification, openModal, closeModal, setModalContent }) {
   const req = state.requests.find(r => r.id && String(r.id).trim() === String(requestId).trim());
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedFileName, setSelectedFileName] = useState("");
@@ -3225,7 +3617,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
       <div style={{ padding: '20px' }}>
         <header className="app-header">
           <div className="header-left">
-            <button className="back-btn" onClick={() => navigateTo('#live-orders')} style={{ cursor: 'pointer' }}>
+            <button className="back-btn" onClick={() => (goBack || navigateTo)('#live-orders')} style={{ cursor: 'pointer' }}>
               <Icons.Back />
             </button>
             <h1 style={{ fontSize: '18px' }}>Order details</h1>
@@ -3243,7 +3635,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
       <div style={{ padding: '20px' }}>
         <header className="app-header">
           <div className="header-left">
-            <button className="back-btn" onClick={() => navigateTo('#live-orders')} style={{ cursor: 'pointer' }}>
+            <button className="back-btn" onClick={() => (goBack || navigateTo)('#live-orders')} style={{ cursor: 'pointer' }}>
               <Icons.Back />
             </button>
             <h1 style={{ fontSize: '18px' }}>Order details</h1>
@@ -3253,7 +3645,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
           <Icons.Warning />
           <p style={{ fontWeight: 800, margin: '14px 0 6px 0', fontSize: '16px', color: 'var(--text-main)' }}>Request "{requestId}" Not Found</p>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '18px' }}>The requested order could not be found or has been removed.</p>
-          <button className="btn-orange" onClick={() => navigateTo('#live-orders')} style={{ width: 'auto', padding: '10px 20px', fontSize: '12px', cursor: 'pointer' }}>
+          <button className="btn-orange" onClick={() => (goBack || navigateTo)('#live-orders')} style={{ width: 'auto', padding: '10px 20px', fontSize: '12px', cursor: 'pointer' }}>
             Back to Orders
           </button>
         </div>
@@ -3357,14 +3749,24 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
   else if (logisticsStatus === "Received") progressWidth = 100;
 
   const getTimelineInfo = (statusName) => {
-    if (statusName === "No Response") {
+    if (statusName === "Order Placed" || statusName === "No Response") {
+      const entry = req.history && req.history.slice().reverse().find(h => h.status === "No Response" || h.status === "Order Placed");
+      if (entry && entry.updatedBy) {
+        return {
+          date: entry.timestamp,
+          updatedBy: entry.updatedBy,
+          userId: entry.userId
+        };
+      }
+      const initEntry = req.history && req.history.find(h => h.status === "Pending");
       return {
-        date: req.date,
-        updatedBy: req.employeeName || "Employee"
+        date: req.date || initEntry?.timestamp,
+        updatedBy: req.employeeName || initEntry?.updatedBy || "Employee",
+        userId: req.employeeId || initEntry?.userId
       };
     }
-    const entry = req.history && req.history.find(h => h.status === statusName);
-    return entry ? { date: entry.timestamp, updatedBy: entry.updatedBy } : null;
+    const entry = req.history && req.history.slice().reverse().find(h => h.status === statusName);
+    return entry && entry.updatedBy ? { date: entry.timestamp, updatedBy: entry.updatedBy, userId: entry.userId } : null;
   };
 
   const handleAskSupplier = async () => {
@@ -3381,7 +3783,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
     }
   };
 
-  const handleStatusChange = async (newStatus, remarks = "", proofOfReceipt = null, proofOfReceiptName = "", lrData = null, lrName = "", newDispatchDate = null) => {
+  const handleStatusChange = async (newStatus, remarks = "", proofOfReceipt = null, proofOfReceiptName = "", lrData = null, lrName = "", newDispatchDate = null, storageLocation = "") => {
     if (!newStatus) return;
     const prevStatus = req.status;
 
@@ -3399,16 +3801,21 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
     if (newStatus === "Received" && proofOfReceiptName) {
       remarksStr += ` Field [Proof of Receipt] modified from "None" to "${proofOfReceiptName}".`;
     }
+    if (newStatus === "Received" && storageLocation) {
+      remarksStr += ` Material stored in: "${storageLocation.trim()}".`;
+    }
     if (remarks) {
       remarksStr += ` Remarks: ${remarks}`;
     }
 
-    const updatedHistory = [...req.history, {
+    const updatedHistory = [...(req.history || []), {
       status: newStatus,
-      updatedBy: state.currentUser.name,
-      role: state.currentUser.role,
+      userId: state.currentUser?.id,
+      updatedBy: state.currentUser?.name || "User",
+      role: state.currentUser?.role || "Staff",
       timestamp: new Date().toISOString(),
-      remarks: remarksStr
+      remarks: remarksStr,
+      ...(storageLocation ? { storageLocation: storageLocation.trim() } : {})
     }];
 
     const updatedReq = {
@@ -3419,7 +3826,12 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
       proofOfReceiptName: proofOfReceiptName || req.proofOfReceiptName || "",
       lrCopy: storedLr || req.lrCopy || null,
       lrFileName: lrName || req.lrFileName || "",
-      expectedDispatchDate: newDispatchDate || req.expectedDispatchDate || expDateStr
+      expectedDispatchDate: newDispatchDate || req.expectedDispatchDate || expDateStr,
+      ...(newStatus === "Received" ? {
+        storageLocation: (storageLocation || req.storageLocation || "").trim(),
+        materialStoredIn: (storageLocation || req.materialStoredIn || "").trim(),
+        actualDeliveryDate: req.status === "Received" && req.actualDeliveryDate ? req.actualDeliveryDate : new Date().toISOString()
+      } : {})
     };
 
     if (newStatus === "Received") {
@@ -3475,7 +3887,13 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
     const isMovingForward = targetIdx > currentIdx && targetStatus !== "Rejected";
     const isRejected = targetStatus === "Rejected";
 
-    // Requirement 3: Moving Forward in sequence -> smooth 1-click workflow without confirmation modal
+    // Force Material Stored In for transition to Received
+    if (targetStatus === "Received") {
+      renderMaterialStoredInModal();
+      return;
+    }
+
+    // Moving Forward in sequence -> smooth 1-click workflow without confirmation modal
     if (isMovingForward && !isRejected) {
       handleStatusChange(targetStatus);
       return;
@@ -3697,74 +4115,107 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
     openModal();
   };
 
-  const renderVerifyReceivedModal = (currentProof = null, currentProofName = "") => {
-    let remarks = "Physically verified and stacked in store.";
-    
-    setModalContent(
-      <div style={{ textAlign: 'left' }}>
-        <p style={{ fontSize: '13px', marginBottom: '12px' }}>Enter verification remarks:</p>
-        <div className="form-group">
-          <input 
-            type="text" 
-            className="form-control" 
-            defaultValue={remarks} 
-            onChange={e => { remarks = e.target.value; }} 
-            style={{ cursor: 'text' }}
-          />
-        </div>
-        
-        <div className="form-group" style={{ marginTop: '16px' }}>
-          <label>Proof of Receipt</label>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <button 
-              type="button"
-              className="btn-outlined-icon-edit" 
-              onClick={() => document.getElementById("proof-camera-input")?.click()}
-              style={{ backgroundColor: 'transparent', color: 'var(--primary-orange)', border: '1px solid var(--primary-orange)', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', height: '36px', boxSizing: 'border-box' }}
-            >
-              📸 Camera
-            </button>
-            <input id="proof-camera-input" type="file" accept="image/*" capture="environment" onChange={handleProofCamera} style={{ display: 'none' }} />
-            
-            <button 
-              type="button"
-              className="btn-outlined-icon-key" 
-              onClick={() => document.getElementById("proof-gallery-input")?.click()}
-              style={{ backgroundColor: 'transparent', color: 'var(--text-main)', border: '1px solid var(--text-main)', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', height: '36px', boxSizing: 'border-box' }}
-            >
-              📁 Gallery
-            </button>
-            <input id="proof-gallery-input" type="file" accept="image/*" onChange={handleProofGallery} style={{ display: 'none' }} />
+  const renderMaterialStoredInModal = () => {
+    let locationInput = "";
+    let remarksInput = "";
+
+    const updateModal = (err = "") => {
+      setModalContent(
+        <div style={{ textAlign: 'left', fontFamily: 'var(--font-family)' }}>
+          <div className="form-group" style={{ marginBottom: '16px' }}>
+            <label style={{ fontSize: '13px', fontWeight: '700', display: 'block', marginBottom: '6px', color: 'var(--text-main)' }}>
+              Material stored in <span style={{ color: 'var(--status-red)' }}>*</span>
+            </label>
+            <input 
+              type="text" 
+              className="form-control" 
+              placeholder="e.g. Office, Store, Workshop" 
+              defaultValue={locationInput}
+              onChange={e => {
+                locationInput = e.target.value;
+                if (err) updateModal("");
+              }}
+              autoFocus
+              style={{ cursor: 'text', fontWeight: '400', border: err ? '1.5px solid var(--status-red)' : undefined }}
+            />
+            {err && (
+              <div style={{ color: 'var(--status-red)', fontSize: '12px', fontWeight: '600', marginTop: '6px' }}>
+                {err}
+              </div>
+            )}
           </div>
 
-          {currentProof && (
-            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px', background: '#f9f9f8', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--status-green)' }}>✓ Proof Attached ({currentProofName})</span>
-              <img src={currentProof} style={{ maxWidth: '100%', maxHeight: '120px', borderRadius: '6px', objectFit: 'contain', border: '1px solid var(--border-color)' }} alt="Proof preview" />
-            </div>
-          )}
-        </div>
+          <div className="form-group" style={{ marginBottom: '20px' }}>
+            <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>
+              Verification Remarks
+            </label>
+            <textarea 
+              className="form-control" 
+              rows="3"
+              placeholder="Enter remarks if required" 
+              defaultValue={remarksInput}
+              onChange={e => { remarksInput = e.target.value; }} 
+              style={{ cursor: 'text', fontWeight: '400', resize: 'vertical' }}
+            />
+          </div>
 
-        <button 
-          className="btn-orange" 
-          onClick={() => {
-            handleStatusChange("Received", remarks || "Physically verified and stacked in store.", currentProof, currentProofName);
-            closeModal();
-          }} 
-          style={{ width: '100%', cursor: 'pointer', marginTop: '14px' }}
-        >
-          Confirm Received
-        </button>
-      </div>,
-      "Verify & Mark Received"
-    );
+          <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+            <button 
+              type="button" 
+              onClick={closeModal}
+              style={{
+                flex: 1,
+                backgroundColor: '#f3f4f6',
+                color: '#374151',
+                border: '1px solid #d1d5db',
+                borderRadius: '8px',
+                padding: '10px 16px',
+                fontSize: '13px',
+                fontWeight: '700',
+                cursor: 'pointer'
+              }}
+            >
+              Cancel
+            </button>
+            <button 
+              type="button" 
+              className="btn-orange" 
+              onClick={() => {
+                const trimmedLoc = (locationInput || "").trim();
+                if (!trimmedLoc) {
+                  updateModal("Storage location is required.");
+                  return;
+                }
+                closeModal();
+                handleStatusChange(
+                  "Received",
+                  (remarksInput || "").trim(),
+                  null,
+                  "",
+                  null,
+                  "",
+                  null,
+                  trimmedLoc
+                );
+              }}
+              style={{ flex: 1, cursor: 'pointer', padding: '10px 16px', fontSize: '13px', fontWeight: '700' }}
+            >
+              Confirm Received
+            </button>
+          </div>
+        </div>,
+        "Material stored in"
+      );
+    };
+
+    updateModal();
+    openModal();
   };
 
   const handleVerifyReceived = () => {
     setProofFile(null);
     setProofFileName("");
-    renderVerifyReceivedModal(null, "");
-    openModal();
+    renderMaterialStoredInModal();
   };
 
   // Requirement 9: Edit Expected Dispatch Date (Date only YYYY-MM-DD)
@@ -3866,7 +4317,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
     <div>
       <header className="app-header">
         <div className="header-left">
-          <button className="back-btn" onClick={() => navigateTo('#live-orders')} style={{ cursor: 'pointer' }}>
+          <button className="back-btn" onClick={() => (goBack || navigateTo)('#live-orders')} style={{ cursor: 'pointer' }}>
             <Icons.Back />
           </button>
           <h1 style={{ fontSize: '18px' }}>Order details</h1>
@@ -3952,6 +4403,32 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
             </div>
           );
         })()}
+
+        {/* Material Stored In Display for Received Orders */}
+        {(req.status === "Received" || req.storageLocation || req.materialStoredIn) && (req.storageLocation || req.materialStoredIn) && (
+          <div style={{ 
+            background: '#f0fdf4', 
+            border: '1.5px solid #86efac', 
+            borderRadius: '16px', 
+            padding: '16px 20px', 
+            marginBottom: '20px', 
+            textAlign: 'left', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '12px',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            <span style={{ fontSize: '24px' }}>📦</span>
+            <div>
+              <div style={{ fontSize: '11px', fontWeight: '800', color: '#166534', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                Storage Location
+              </div>
+              <div style={{ fontSize: '16px', fontWeight: '900', color: '#14532d', marginTop: '2px' }}>
+                Material stored in: <span style={{ color: 'var(--primary-orange)' }}>{req.storageLocation || req.materialStoredIn}</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {req.status === "No Response" && (
           <div style={{
@@ -4072,9 +4549,11 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
                     <div style={{ width: `${progressWidth}%`, height: '100%', backgroundColor: '#6B7280', transition: 'width 0.4s ease' }}></div>
                   </div>
                   {trackingStages.map((stage, idx) => {
+                    const mappedStatus = stage === "Order Placed" ? "No Response" : stage;
                     const isActive = stage === (logisticsStatus === "No Response" ? "Order Placed" : logisticsStatus);
                     const isCompleted = trackingStages.indexOf(logisticsStatus === "No Response" ? "Order Placed" : logisticsStatus) >= idx;
                     const stageColor = trackingStageColors[stage] || "var(--status-green)";
+                    const info = getTimelineInfo(mappedStatus);
                     
                     return (
                       <div 
@@ -4082,7 +4561,7 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
                         className={`timeline-step ${isActive ? 'active' : isCompleted ? 'completed' : 'future'}`}
                         style={{ 
                           opacity: 1,
-                          transform: isActive ? 'scale(1.06)' : 'none',
+                          transform: isActive ? 'scale(1.04)' : 'none',
                           transition: 'all 0.3s ease'
                         }}
                       >
@@ -4105,11 +4584,26 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
                           style={{
                             fontWeight: isActive ? '900' : '700',
                             color: isActive ? 'var(--text-main)' : isCompleted ? 'var(--text-main)' : '#374151',
-                            fontSize: isActive ? '12px' : '11px'
+                            fontSize: isActive ? '12px' : '11px',
+                            textAlign: 'center'
                           }}
                         >
                           {stage}
                         </div>
+                        {isCompleted && info?.updatedBy && (
+                          <div 
+                            style={{ 
+                              fontSize: '10px', 
+                              fontWeight: '600', 
+                              color: 'var(--text-muted)', 
+                              marginTop: '2px', 
+                              textAlign: 'center',
+                              lineHeight: '1.2' 
+                            }}
+                          >
+                            by {info.updatedBy}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -4241,6 +4735,11 @@ export function OrderDetailsView({ state, navigateTo, requestId, addNotification
                     {isCompleted && (
                       <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                         Updated by: <b style={{ color: 'var(--text-main)' }}>{info.updatedBy}</b>
+                      </span>
+                    )}
+                    {isCompleted && stage.status === "Received" && (req.storageLocation || req.materialStoredIn) && (
+                      <span style={{ fontSize: '11px', color: '#15803d', fontWeight: '700', marginTop: '2px' }}>
+                        Material stored in: <b>{req.storageLocation || req.materialStoredIn}</b>
                       </span>
                     )}
                   </div>
