@@ -910,7 +910,7 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
             { name: "Priority", prev: original.priority, current: priority, key: "priority" },
             { name: "Bill To", prev: original.billTo, current: billTo, key: "billTo" },
             { name: "Ship To", prev: original.shipTo, current: shipTo, key: "shipTo" },
-            { name: "Mode of Transport", prev: original.transportMode, current: transportMode, key: "transportMode" },
+            { name: "Suggest Transporter Name", prev: original.transportMode, current: transportMode, key: "transportMode" },
             { name: "Due Date", prev: original.dueDate, current: dueDate, key: "dueDate" },
             { name: "Suggested Supplier", prev: original.suggestedSupplier, current: suggestedSupplier, key: "suggestedSupplier" },
             { name: "Description", prev: original.description, current: primaryProduct.description, key: "description" },
@@ -1403,9 +1403,9 @@ export function CreateRequestView({ state, navigateTo, addNotification, openModa
           </div>
         </div>
 
-        {/* Mode of Transport Field */}
+        {/* Suggest Transporter Name Field */}
         <div className="form-group">
-          <label>Mode of Transport</label>
+          <label>Suggest Transporter Name</label>
           <input 
             type="text" 
             className="form-control" 
@@ -1887,7 +1887,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
         { name: "Description", prev: req.description, current: cardData.description, key: "description" },
         { name: "Bill To", prev: req.billTo, current: cardData.billTo, key: "billTo" },
         { name: "Ship To", prev: req.shipTo, current: cardData.shipTo, key: "shipTo" },
-        { name: "Mode of Transport", prev: req.transportMode, current: cardData.transportMode, key: "transportMode" },
+        { name: "Suggest Transporter Name", prev: req.transportMode, current: cardData.transportMode, key: "transportMode" },
         { name: "Supplier ID", prev: req.supplierId, current: cardData.supplierId, key: "supplierId" }
       ];
 
@@ -2213,7 +2213,7 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                   <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '14px', marginBottom: '14px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <div><b>Bill To:</b> {req.billTo || BILL_TO_OPTIONS[0]}</div>
                     <div><b>Ship To:</b> {req.shipTo || req.billTo || "ALAGIRI PAPER MILLS"}</div>
-                    {req.transportMode && <div><b>Mode of Transport:</b> <span style={{ fontWeight: '800', color: 'var(--primary-orange)' }}>{req.transportMode}</span></div>}
+                    {req.transportMode && <div><b>Suggest Transporter Name:</b> <span style={{ fontWeight: '800', color: 'var(--primary-orange)' }}>{req.transportMode}</span></div>}
                     <div><b>Requested By:</b> {req.employeeName || "Employee"}</div>
                     <div><b>Request Date:</b> {new Date(req.date).toLocaleDateString('en-GB')}</div>
                     {assignedSup && <div><b>Assigned Supplier:</b> {assignedSup.companyName}</div>}
@@ -2352,9 +2352,9 @@ export function RequestedOrdersView({ state, navigateTo, addNotification, openMo
                   </div>
                 </div>
 
-                {/* Mode of Transport in Admin Review */}
+                {/* Suggest Transporter Name in Admin Review */}
                 <div className="form-group">
-                  <label>Mode of Transport</label>
+                  <label>Suggest Transporter Name</label>
                   <input 
                     type="text" 
                     className="form-control" 
