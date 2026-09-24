@@ -74,8 +74,6 @@ router.put('/:id', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Main Admin cannot be disabled.' });
   }
 
-  // Only validate identity fields when the request actually changes them
-  // (the disable/enable toggle re-sends the whole cached user object as-is).
   const identityChanged = ['name', 'email', 'phone'].some(
     (key) => body[key] !== undefined && String(body[key]).trim() !== String(currentProfile[key] ?? '').trim()
   );
@@ -84,11 +82,21 @@ router.put('/:id', asyncHandler(async (req, res) => {
     const email = (body.email ?? currentProfile.email ?? '').trim();
     const phone = (body.phone ?? currentProfile.phone ?? '').trim();
     if (row.role !== 'Main Admin') {
-      const validationError = validateUserFields({ name, email, phone });
-      if (validationError) return res.status(400).json({ error: validationError });
+      if (body.name !== undefined) {
+        if (!name) return res.status(400).json({ error: 'Full name is required.' });
+        if (!NAME_REGEX.test(name)) return res.status(400).json({ error: 'Full name contains invalid characters.' });
+      }
+      if (body.email !== undefined && email) {
+        if (!EMAIL_REGEX.test(email)) return res.status(400).json({ error: 'Invalid email format.' });
+      }
+      if (body.phone !== undefined && phone) {
+        if (!PHONE_REGEX.test(phone)) return res.status(400).json({ error: 'Invalid Indian mobile number.' });
+      }
     }
-    const dup = db.prepare("SELECT id FROM users WHERE json_extract(profile, '$.email') = ? COLLATE NOCASE AND id != ?").get(email, row.id);
-    if (dup) return res.status(409).json({ error: 'Email address is already in use by another user.' });
+    if (email) {
+      const dup = db.prepare("SELECT id FROM users WHERE json_extract(profile, '$.email') = ? COLLATE NOCASE AND id != ?").get(email, row.id);
+      if (dup) return res.status(409).json({ error: 'Email address is already in use by another user.' });
+    }
   }
 
   // Avatar pictures are resized in the app to a small JPEG; anything this big

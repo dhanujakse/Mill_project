@@ -181,7 +181,7 @@ export function HomeView({ state, navigateTo, openModal, closeModal, setModalCon
     return diffDays > 14;
   };
 
-  const pendingCount = userRequests.filter(r => r.status === "Pending" || r.status === "Rejected").length;
+  const pendingCount = userRequests.filter(r => r.status === "Pending" || (r.status === "Rejected" && r.poNumber && r.rejectedFrom !== "RequestedOrders")).length;
   const noResponseCount = userRequests.filter(r => r.status === "No Response").length;
   const acknowledgedCount = userRequests.filter(r => r.status === "Acknowledged").length;
   const bookedCount = userRequests.filter(r => r.status === "Booked").length;
@@ -1766,7 +1766,7 @@ export function SupplierPicker({ suppliers, currentSupplierId, onSelect, product
 // ----------------------------------------------------
 export function RequestedOrdersView({ state, navigateTo, goBack, addNotification, openModal, closeModal, setModalContent }) {
   const user = state.currentUser;
-  const pendingRequests = state.requests.filter(r => (r.status === "Pending" || r.status === "Rejected") && (!r.deletedByUserIds || !r.deletedByUserIds.includes(user.id)));
+  const pendingRequests = state.requests.filter(r => (r.status === "Pending" || (r.status === "Rejected" && r.poNumber && r.rejectedFrom !== "RequestedOrders")) && (!r.deletedByUserIds || !r.deletedByUserIds.includes(user.id)));
   
   // URL Hash parameter tracking for selected order navigation (Requirement 8)
   const getSelectedIdFromHash = () => {
@@ -2085,6 +2085,7 @@ export function RequestedOrdersView({ state, navigateTo, goBack, addNotification
               ...req,
               status: "Rejected",
               wasRejected: true,
+              rejectedFrom: "RequestedOrders",
               rejections: [...(req.rejections || []), buildRejectionRecord(req, supplier, user, finalReason)],
               history: [...(req.history || []), {
                 status: "Rejected",
@@ -2109,7 +2110,7 @@ export function RequestedOrdersView({ state, navigateTo, goBack, addNotification
             state.triggerWebhook("request.rejected", saved);
 
             closeModal();
-            navigateTo('#home');
+            navigateTo('#rejected-orders');
           }}
           style={{ width: '100%', cursor: 'pointer' }}
         >
@@ -2121,148 +2122,18 @@ export function RequestedOrdersView({ state, navigateTo, goBack, addNotification
     openModal();
   };
 
-  const [selectedIds, setSelectedIds] = useState(new Set());
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
-
-  const promptDeleteSingle = (reqToDelete) => {
-    setModalContent(
-      <div style={{ textAlign: 'left', fontFamily: 'var(--font-family)' }}>
-        <p style={{ fontSize: '14px', color: 'var(--text-main)', marginBottom: '20px', lineHeight: '1.5' }}>
-          Delete this requested order?
-        </p>
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-          <button 
-            type="button" 
-            onClick={closeModal}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#f3f4f6',
-              color: '#374151',
-              border: '1px solid #d1d5db',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: '700',
-              cursor: 'pointer'
-            }}
-          >
-            Cancel
-          </button>
-          <button 
-            type="button" 
-            onClick={async () => {
-              try {
-                await apiService.deleteRequest(reqToDelete.id);
-                state.setRequests(prev => (prev || []).filter(r => r.id !== reqToDelete.id));
-                setSelectedIds(prev => {
-                  const next = new Set(prev);
-                  next.delete(reqToDelete.id);
-                  if (next.size === 0) setIsSelectionMode(false);
-                  return next;
-                });
-                closeModal();
-                if (selectedRequestId === reqToDelete.id) {
-                  setSelectedRequestId(null);
-                  navigateTo('#requested-orders');
-                }
-                state.showToast("Deleted", `Request ${reqToDelete.id} deleted successfully.`, "success");
-              } catch (err) {
-                state.showToast("Delete Failed", err.message || "Failed to delete request.", "success");
-              }
-            }}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: 'var(--status-red, #dc2626)',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: '700',
-              cursor: 'pointer'
-            }}
-          >
-            Delete
-          </button>
-        </div>
-      </div>,
-      "Delete Requested Order"
-    );
-    openModal();
-  };
-
-  const promptBulkDelete = () => {
-    if (selectedIds.size === 0) return;
-    const count = selectedIds.size;
-    const idsArray = Array.from(selectedIds);
-    setModalContent(
-      <div style={{ textAlign: 'left', fontFamily: 'var(--font-family)' }}>
-        <p style={{ fontSize: '14px', color: 'var(--text-main)', marginBottom: '20px', lineHeight: '1.5' }}>
-          Delete {count} selected requested order{count > 1 ? 's' : ''}?
-        </p>
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-          <button 
-            type="button" 
-            onClick={closeModal}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#f3f4f6',
-              color: '#374151',
-              border: '1px solid #d1d5db',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: '700',
-              cursor: 'pointer'
-            }}
-          >
-            Cancel
-          </button>
-          <button 
-            type="button" 
-            onClick={async () => {
-              try {
-                await apiService.bulkDeleteRequests(idsArray);
-                const idsSet = new Set(idsArray);
-                state.setRequests(prev => (prev || []).filter(r => !idsSet.has(r.id)));
-                setSelectedIds(new Set());
-                setIsSelectionMode(false);
-                closeModal();
-                if (selectedRequestId && idsSet.has(selectedRequestId)) {
-                  setSelectedRequestId(null);
-                  navigateTo('#requested-orders');
-                }
-                state.showToast("Deleted", `${count} requested order${count > 1 ? 's' : ''} deleted.`, "success");
-              } catch (err) {
-                state.showToast("Delete Failed", err.message || "Failed to delete requests.", "success");
-              }
-            }}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: 'var(--status-red, #dc2626)',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: '700',
-              cursor: 'pointer'
-            }}
-          >
-            Delete
-          </button>
-        </div>
-      </div>,
-      "Delete Requested Orders"
-    );
-    openModal();
-  };
-
   const selectedReq = selectedRequestId 
     ? state.requests.find(r => r.id && String(r.id).trim() === String(selectedRequestId).trim()) 
     : null;
 
   useEffect(() => {
-    // Route non-Pending, non-Rejected requests to Live Order Details.
-    // Rejected orders must stay in RequestedOrdersView so admin can re-place them.
-    if (selectedReq && selectedReq.status !== "Pending" && selectedReq.status !== "Rejected") {
-      navigateTo(`#order-details?id=${selectedReq.id}`);
+    // Route non-Pending, non-eligible requests
+    if (selectedReq) {
+      if (selectedReq.status === "Rejected" && (!selectedReq.poNumber || selectedReq.rejectedFrom === "RequestedOrders")) {
+        navigateTo('#rejected-orders');
+      } else if (selectedReq.status !== "Pending" && selectedReq.status !== "Rejected") {
+        navigateTo(`#order-details?id=${selectedReq.id}`);
+      }
     }
   }, [selectedReq, navigateTo]);
 
@@ -2321,124 +2192,17 @@ export function RequestedOrdersView({ state, navigateTo, goBack, addNotification
             </div>
           ) : (
             <>
-              {/* Select All and Selection Mode Toolbar */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', padding: '10px 14px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', boxShadow: 'var(--shadow-sm)' }}>
-                {!isSelectionMode ? (
-                  <button 
-                    type="button" 
-                    onClick={() => {
-                      setIsSelectionMode(true);
-                      setSelectedIds(new Set(pendingRequests.map(r => r.id)));
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text-main)',
-                      fontSize: '13px',
-                      fontWeight: '700',
-                      cursor: 'pointer',
-                      padding: '2px 0',
-                      display: 'inline-flex',
-                      alignItems: 'center'
-                    }}
-                  >
-                    Select All
-                  </button>
-                ) : (
-                  <>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', margin: 0 }}>
-                      <input 
-                        type="checkbox" 
-                        checked={pendingRequests.length > 0 && selectedIds.size === pendingRequests.length}
-                        onChange={() => {
-                          if (selectedIds.size === pendingRequests.length) {
-                            setSelectedIds(new Set());
-                            setIsSelectionMode(false);
-                          } else {
-                            setSelectedIds(new Set(pendingRequests.map(r => r.id)));
-                          }
-                        }}
-                        style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--primary-orange)' }}
-                      />
-                      Select All
-                    </label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {selectedIds.size > 0 && (
-                        <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)' }}>
-                          {selectedIds.size} Selected
-                        </span>
-                      )}
-                      {selectedIds.size > 0 && (
-                        <button 
-                          type="button" 
-                          onClick={promptBulkDelete}
-                          title="Delete selected orders"
-                          aria-label="Delete selected orders"
-                          style={{
-                            backgroundColor: '#fee2e2',
-                            color: 'var(--status-red, #dc2626)',
-                            border: '1px solid #fca5a5',
-                            borderRadius: '8px',
-                            padding: '6px 10px',
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'all 0.15s ease'
-                          }}
-                        >
-                          <Icons.Trash size={18} />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsSelectionMode(false);
-                          setSelectedIds(new Set());
-                        }}
-                        title="Exit selection mode"
-                        aria-label="Exit selection mode"
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--text-muted)',
-                          fontSize: '18px',
-                          fontWeight: '700',
-                          lineHeight: '1',
-                          cursor: 'pointer',
-                          padding: '4px 6px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-
               {pendingRequests.map((req, idx) => (
                 <div 
                   key={req.id} 
                   className="requested-order-overview-card"
                   onClick={() => {
-                    if (isSelectionMode) {
-                      setSelectedIds(prev => {
-                        const next = new Set(prev);
-                        if (next.has(req.id)) next.delete(req.id);
-                        else next.add(req.id);
-                        return next;
-                      });
-                    } else {
-                      window.location.hash = `#requested-orders?id=${req.id}`;
-                      setSelectedRequestId(req.id);
-                    }
+                    window.location.hash = `#requested-orders?id=${req.id}`;
+                    setSelectedRequestId(req.id);
                   }}
                   style={{ 
                     background: 'var(--card-bg)', 
-                    border: (isSelectionMode && selectedIds.has(req.id)) ? '1.5px solid var(--primary-orange)' : '1px solid var(--border-color)', 
+                    border: '1px solid var(--border-color)', 
                     borderRadius: '16px', 
                     padding: '16px', 
                     marginBottom: '14px', 
@@ -2450,52 +2214,9 @@ export function RequestedOrdersView({ state, navigateTo, goBack, addNotification
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      {isSelectionMode && (
-                        <input 
-                          type="checkbox" 
-                          checked={selectedIds.has(req.id)}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            setSelectedIds(prev => {
-                              const next = new Set(prev);
-                              if (next.has(req.id)) next.delete(req.id);
-                              else next.add(req.id);
-                              return next;
-                            });
-                          }}
-                          style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--primary-orange)' }}
-                        />
-                      )}
-                      <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--primary-orange)' }}>
-                        {req.id}
-                      </div>
+                    <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--primary-orange)' }}>
+                      {req.id}
                     </div>
-                    {!isSelectionMode && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          promptDeleteSingle(req);
-                        }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--status-red, #dc2626)',
-                          cursor: 'pointer',
-                          padding: '4px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: '6px'
-                        }}
-                        title="Delete this requested order"
-                        aria-label="Delete this requested order"
-                      >
-                        <Icons.Trash size={16} />
-                      </button>
-                    )}
                   </div>
                   
                   <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', marginBottom: '6px' }}>
@@ -3844,6 +3565,7 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
       // Same order entity goes to Rejected Orders AND back to Requested Orders
       // (status "Rejected"), where it can be placed with another supplier.
       updatedReq.wasRejected = true;
+      updatedReq.rejectedFrom = "LiveOrders";
       updatedReq.rejections = [...(req.rejections || []), buildRejectionRecord(req, state.suppliers.find(s => s.id === req.supplierId), state.currentUser, remarks || "Rejected")];
     }
 
@@ -5069,6 +4791,97 @@ export function ChangePasswordForm({ user, apiService, closeModal }) {
   );
 }
 
+function EditProfileNameForm({ user, apiService, state, closeModal }) {
+  const [name, setName] = useState(user.name || "");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("Profile name is required.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const saved = await apiService.saveUser({
+        id: user.id,
+        name: trimmed
+      });
+      if (saved && saved.id) {
+        state.setCurrentUser(saved);
+        cacheCurrentUser(saved);
+        state.showToast("Profile Updated", `Profile name updated to "${trimmed}".`, "success");
+        closeModal();
+      } else {
+        throw new Error("Server did not return updated user.");
+      }
+    } catch (err) {
+      setError(err.message || "Failed to update profile name.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} style={{ textAlign: 'left', fontFamily: 'var(--font-family)' }}>
+      <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px', lineHeight: '1.4' }}>
+        Edit your profile name. This name will appear across the app and on orders you review or create.
+      </p>
+      <div className="form-group" style={{ marginBottom: '18px' }}>
+        <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px', display: 'block' }}>
+          Profile Name
+        </label>
+        <input
+          type="text"
+          className="form-control"
+          value={name}
+          placeholder="Enter your name"
+          onChange={(e) => { setName(e.target.value); setError(""); }}
+          autoFocus
+          style={{ cursor: 'text', border: error ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)' }}
+        />
+        {error && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px' }}>{error}</div>}
+      </div>
+      <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+        <button
+          type="button"
+          onClick={closeModal}
+          disabled={saving}
+          style={{
+            padding: '10px 16px',
+            backgroundColor: '#f3f4f6',
+            color: '#374151',
+            border: '1px solid #d1d5db',
+            borderRadius: '8px',
+            fontSize: '13px',
+            fontWeight: '700',
+            cursor: 'pointer'
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="btn-orange"
+          disabled={saving}
+          style={{
+            padding: '10px 20px',
+            width: 'auto',
+            marginBottom: 0,
+            fontSize: '13px',
+            cursor: saving ? 'not-allowed' : 'pointer'
+          }}
+        >
+          {saving ? 'Saving...' : 'Save Name'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 // ----------------------------------------------------
 // 7. SETTINGS MAIN VIEW COMPONENT
 // ----------------------------------------------------
@@ -5088,20 +4901,32 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
     openModal();
   };
 
+  const openEditNameModal = () => {
+    setModalContent(
+      <EditProfileNameForm
+        key={`edit-name-${Date.now()}`}
+        user={user}
+        apiService={apiService}
+        state={state}
+        closeModal={closeModal}
+      />,
+      "Edit Profile Name"
+    );
+    openModal();
+  };
+
   const handleSaveAvatar = async (updatedUser) => {
     let saved;
     try {
-      // Send only the avatar fields: re-sending the whole cached user made the
-      // server re-validate name/email/phone, which failed for accounts without
-      // an email or phone on file.
+      // Send avatar and name fields
       saved = await apiService.saveUser({
         id: updatedUser.id,
+        name: updatedUser.name,
         avatar: updatedUser.avatar,
         avatarColor: updatedUser.avatarColor,
         profileColor: updatedUser.profileColor
       });
     } catch (err) {
-      // Don't pretend it saved: the change would vanish on the next reload.
       console.error("Failed to save avatar settings:", err);
       state.showToast("Could Not Save Changes", err.message || "Your profile was not updated. Please try again.", "success");
       return;
@@ -5110,8 +4935,6 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
       state.showToast("Could Not Save Changes", "The server did not confirm the update. Please try again.", "success");
       return;
     }
-    // Show exactly what the server stored, so the UI, a page refresh and the
-    // next login all agree.
     state.setCurrentUser(saved);
     cacheCurrentUser(saved);
     state.showToast("Profile Saved", "Your avatar changes were saved.", "success");
@@ -5120,8 +4943,6 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
 
   const openAvatarModal = () => {
     setModalContent(
-      // Fresh key each time: otherwise React reuses the editor left over from
-      // the last opening, still showing that session's (possibly unsaved) picks.
       <AvatarEditor key={`avatar-editor-${Date.now()}`} user={user} onSave={handleSaveAvatar} onClose={closeModal} />,
       "Customize Avatar"
     );
@@ -5140,15 +4961,46 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
       </header>
 
       <div>
-        <div className="stat-card" style={{ marginBottom: '24px', padding: '16px', cursor: 'pointer' }} onClick={openAvatarModal}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <UserAvatar user={user} size={48} />
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ fontWeight: '800', fontSize: '16px', color: 'var(--text-main)' }}>{user.name}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{user.role}</div>
+        <div className="stat-card" style={{ marginBottom: '24px', padding: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div onClick={openAvatarModal} style={{ cursor: 'pointer', position: 'relative' }} title="Change Avatar">
+                <UserAvatar user={user} size={48} />
+              </div>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontWeight: '800', fontSize: '16px', color: 'var(--text-main)' }}>{user.name}</span>
+                  <button 
+                    type="button" 
+                    onClick={openEditNameModal}
+                    style={{ 
+                      background: 'none', 
+                      border: 'none', 
+                      cursor: 'pointer', 
+                      padding: '2px 4px', 
+                      color: 'var(--primary-orange)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '4px'
+                    }}
+                    title="Edit Name"
+                    aria-label="Edit Profile Name"
+                  >
+                    <Icons.Edit size={15} />
+                  </button>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{user.role}</div>
+              </div>
             </div>
+            <button 
+              type="button"
+              onClick={openAvatarModal}
+              style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '6px 12px', fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', cursor: 'pointer' }}
+            >
+              Avatar
+            </button>
           </div>
-          <Icons.ChevronRight />
         </div>
 
         <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '12px', letterSpacing: '0.5px', paddingLeft: '4px', textAlign: 'left' }}>
@@ -6993,6 +6845,7 @@ export function UserAvatar({ user, size = 40 }) {
 // 16. AVATAR / PROFILE COLOR EDITOR DRAWER COMPONENT
 // ----------------------------------------------------
 export function AvatarEditor({ user, onSave, onClose }) {
+  const [editName, setEditName] = useState(user.name || "");
   const initialColor = normalizeAvatarColor(user.profileColor || user.avatarColor);
   const [selectedColor, setSelectedColor] = useState(initialColor);
   const [isSaving, setIsSaving] = useState(false);
@@ -7109,6 +6962,7 @@ export function AvatarEditor({ user, onSave, onClose }) {
     try {
       await onSave({
         ...user,
+        name: editName.trim() || user.name,
         avatar: finalAvatar,
         avatarColor: selectedColor,
         profileColor: selectedColor
@@ -7120,6 +6974,7 @@ export function AvatarEditor({ user, onSave, onClose }) {
 
   const previewUser = {
     ...user,
+    name: editName || user.name,
     avatar: currentAvatar,
     avatarColor: selectedColor,
     profileColor: selectedColor
@@ -7133,9 +6988,24 @@ export function AvatarEditor({ user, onSave, onClose }) {
           <UserAvatar user={previewUser} size={80} />
         </div>
         <div style={{ marginTop: '10px', textAlign: 'center' }}>
-          <div style={{ fontWeight: '800', fontSize: '16px', color: 'var(--text-main)' }}>{user.name || "User"}</div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{user.role || "Role"} • Avatar Preview</div>
+          <div style={{ fontWeight: '800', fontSize: '16px', color: 'var(--text-main)' }}>{editName || user.name || "User"}</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{user.role || "Role"} • Profile Preview</div>
         </div>
+      </div>
+
+      {/* Profile Name Field */}
+      <div className="form-group" style={{ marginBottom: '18px' }}>
+        <label style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px', display: 'block' }}>
+          Profile Name
+        </label>
+        <input 
+          type="text" 
+          className="form-control" 
+          value={editName} 
+          onChange={e => setEditName(e.target.value)} 
+          placeholder="Enter profile name" 
+          style={{ cursor: 'text' }}
+        />
       </div>
 
       {/* Avatar Color Selection */}
