@@ -129,6 +129,14 @@ export const apiService = {
     return apiFetch(`/requests/${encodeURIComponent(requestId)}`, { method: 'PUT', body: updatedData });
   },
 
+  async deleteRequest(requestId) {
+    return apiFetch(`/requests/${encodeURIComponent(requestId)}`, { method: 'DELETE' });
+  },
+
+  async bulkDeleteRequests(ids) {
+    return apiFetch('/requests/bulk-delete', { method: 'POST', body: { ids } });
+  },
+
   // ------------------------------------------------
   // WHATSAPP - SUPPLIER AVAILABILITY REQUESTS
   // ------------------------------------------------
