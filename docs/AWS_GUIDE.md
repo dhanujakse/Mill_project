@@ -17,7 +17,7 @@ What was built for this (already in the repo):
 
 > **Honest status:** the S3 code was tested end to end (upload, download, validation, backup and restore, and the full browser flow) against an S3 emulator. The EC2 scripts were syntax-checked and reviewed but **could not be run on Linux from the machine they were written on**. Their first run on a brand-new instance is the real test, so do steps 4 to 6 on a fresh instance (you can throw it away and start again if something fails).
 
-## Rough monthly cost (Mumbai, check the AWS pricing calculator for exact numbers)
+## Rough monthly cost (Sydney, check the AWS pricing calculator for exact numbers)
 | Item | About |
 |---|---|
 | EC2 `t3.micro` (1 GB RAM, plenty for this app; free for 12 months on new accounts) | 8 to 9 USD |
@@ -31,7 +31,7 @@ What was built for this (already in the repo):
 ## 0. AWS account basics (one time)
 1. Create the account at aws.amazon.com and **turn on MFA for the root user**.
 2. Create an IAM user (or Identity Center user) with admin rights for yourself, and use that instead of root.
-3. Install the **AWS CLI v2**, then run `aws configure` (region `ap-south-1`).
+3. Install the **AWS CLI v2**, then run `aws configure` (region `ap-southeast-2`, Sydney).
 4. **Billing > Budgets**: create a monthly budget of about 20 USD with an email alert.
 
 Below, replace `YOUR-BUCKET-NAME` with a globally unique name such as `millmate-files-8f3k2`.
@@ -40,7 +40,7 @@ Below, replace `YOUR-BUCKET-NAME` with a globally unique name such as `millmate-
 Run from the repo folder:
 
 ```powershell
-aws s3api create-bucket --bucket YOUR-BUCKET-NAME --region ap-south-1 --create-bucket-configuration LocationConstraint=ap-south-1
+aws s3api create-bucket --bucket YOUR-BUCKET-NAME --region ap-southeast-2 --create-bucket-configuration LocationConstraint=ap-southeast-2
 aws s3api put-public-access-block --bucket YOUR-BUCKET-NAME --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 aws s3api put-bucket-versioning --bucket YOUR-BUCKET-NAME --versioning-configuration Status=Enabled
 aws s3api put-bucket-encryption --bucket YOUR-BUCKET-NAME --server-side-encryption-configuration file://deploy/aws/s3-encryption.json

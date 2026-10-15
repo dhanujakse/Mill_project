@@ -8,7 +8,7 @@
 # Required : DOMAIN     hostname that already points at this server's public IP
 #                       (Caddy needs it to get a free HTTPS certificate)
 #            S3_BUCKET  bucket for attachments and database backups
-# Optional : S3_REGION (ap-south-1), CORS_ORIGIN, SEED_PASSWORD, REPO_URL, BRANCH
+# Optional : S3_REGION (ap-southeast-2), CORS_ORIGIN, SEED_PASSWORD, REPO_URL, BRANCH
 #
 # Safe to run again: it updates the code and services but never overwrites an
 # existing /etc/millmate.env (your JWT secret and settings) or the database.
@@ -18,7 +18,7 @@ set -euo pipefail
 : "${S3_BUCKET:?Set S3_BUCKET, e.g. S3_BUCKET=millmate-files-1234}"
 REPO_URL="${REPO_URL:-https://github.com/ramya25-star/Mill_project.git}"
 BRANCH="${BRANCH:-main}"
-S3_REGION="${S3_REGION:-ap-south-1}"
+S3_REGION="${S3_REGION:-ap-southeast-2}"
 CORS_ORIGIN="${CORS_ORIGIN:-https://alagiri-mill.vercel.app,https://localhost,capacitor://localhost}"
 APP_DIR=/opt/millmate
 DATA_DIR=/var/lib/millmate

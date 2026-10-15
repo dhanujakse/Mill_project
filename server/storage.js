@@ -21,7 +21,7 @@ let client;
 export const getS3Client = () => {
   if (!client) {
     client = new S3Client({
-      region: S3_REGION || AWS_REGION || 'ap-south-1',
+      region: S3_REGION || AWS_REGION || 'ap-southeast-2',
       ...(S3_ENDPOINT ? { endpoint: S3_ENDPOINT, forcePathStyle: true } : {})
     });
   }
