@@ -41,7 +41,7 @@ Notes:
 ## 2. Frontend on Vercel
 
 1. Push to `main`; Vercel builds automatically.
-2. `.env.production` already points the build at `https://mill-project.onrender.com/api`. If the backend URL ever changes, update it there.
+2. `.env.production` already points the build at `https://api.alagiriduplex.com/api`. If the backend URL ever changes, update it there.
 3. **After every deploy, confirm Vercel really is serving the new build** (an earlier bug report was caused by a stale deploy): open the site, view source, and check the script name `/assets/index-XXXX.js` changed compared with a local `npm run build`, or check the Vercel dashboard shows the latest commit as "Production - Ready".
 
 ## 3. Android - signed App Bundle (.aab) for Google Play
