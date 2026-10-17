@@ -1,4 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { App as CapacitorApp } from '@capacitor/app';
+import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 import './App.css';
 import { CONFIG } from './config';
 import { apiService, onUnauthorized, getAuthToken, clearAuthToken, cacheCurrentUser } from './services/api';
@@ -91,7 +94,10 @@ export default function App() {
   // authenticated session. Pulled out of the mount effect so it can also run
   // right after a fresh login or a forced password change - the mount effect
   // only fires once, but a brand-new session needs this data too.
-  const loadProtectedData = async (user) => {
+  // autoDelay=false is used by the silent background refresh: if every open
+  // phone ran the delay check every few minutes, they could all flag the same
+  // order at once and post duplicate "Delayed" notifications.
+  const loadProtectedData = async (user, { autoDelay = true } = {}) => {
     try {
       // Mirrors the server-side guard on GET /logs (Main Admin, or Sub Admin
       // with the view_logs permission) - only those roles can see the full
@@ -109,6 +115,7 @@ export default function App() {
       setLogs(auditLogs);
       setNotifications(notifs);
       setWebhookUrl(whUrl);
+      if (!autoDelay) return;
 
     // Run automatic delay check using expectedDispatchDate (Requirement 7 & 8)
     let delayModified = false;
@@ -353,6 +360,155 @@ export default function App() {
       window.removeEventListener('hashchange', handleHashChange);
     };
   }, []);
+
+  // Android hardware back button: close an open modal first, then step back
+  // through the in-app history, and only leave the app from Home / Login.
+  // Without this listener Android's default closes the whole app.
+  const backButtonRef = useRef(null);
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    const listener = CapacitorApp.addListener('backButton', () => {
+      const s = backButtonRef.current;
+      if (!s) return;
+      if (s.modalOpen) {
+        setModalOpen(false);
+        return;
+      }
+      const path = (window.location.hash || '#home').split('?')[0];
+      if (!s.currentUser || s.currentUser.mustChangePassword || path === '#home') {
+        CapacitorApp.exitApp();
+        return;
+      }
+      s.goBack('#home');
+    });
+    return () => { listener.then(l => l.remove()); };
+  }, []);
+
+  // ----------------------------------------------------
+  // LIVE DATA: refresh on resume, on a timer, and on pull-down
+  // ----------------------------------------------------
+  // Data used to load only at startup, so orders other people created never
+  // showed up until the app was fully restarted.
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine !== false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const refreshInFlight = useRef(false);
+  const lastRefreshAt = useRef(Date.now());
+  const pullStartY = useRef(null);
+  const mainRef = useRef(null);
+
+  const refreshData = async ({ showSpinner = false } = {}) => {
+    const user = backButtonRef.current?.currentUser;
+    if (!user || user.mustChangePassword || refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    if (showSpinner) setRefreshing(true);
+    try {
+      await loadProtectedData(user, { autoDelay: showSpinner });
+      lastRefreshAt.current = Date.now();
+    } finally {
+      refreshInFlight.current = false;
+      if (showSpinner) setRefreshing(false);
+    }
+  };
+  const refreshDataRef = useRef(refreshData);
+  refreshDataRef.current = refreshData;
+
+  useEffect(() => {
+    const STALE_AFTER_MS = 30000;
+    const POLL_MS = 120000;
+    const refreshIfStale = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastRefreshAt.current > STALE_AFTER_MS) {
+        refreshDataRef.current();
+      }
+    };
+    const handleOnline = () => { setIsOnline(true); refreshDataRef.current(); };
+    const handleOffline = () => setIsOnline(false);
+
+    document.addEventListener('visibilitychange', refreshIfStale);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    const poll = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshDataRef.current();
+    }, POLL_MS);
+
+    let resumeListener = null;
+    if (Capacitor.isNativePlatform()) {
+      resumeListener = CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) refreshIfStale();
+      });
+    }
+
+    return () => {
+      document.removeEventListener('visibilitychange', refreshIfStale);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(poll);
+      if (resumeListener) resumeListener.then(l => l.remove());
+    };
+  }, []);
+
+  // On-screen keyboard: hide the floating nav while typing and keep the
+  // focused field visible above the keyboard.
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    let fullHeight = window.innerHeight;
+    const handleResize = () => {
+      const h = vv ? vv.height : window.innerHeight;
+      if (h > fullHeight) fullHeight = h;
+      const typing = !!document.activeElement?.matches?.('input, textarea, select, [contenteditable="true"]');
+      setKeyboardOpen(typing && fullHeight - h > 150);
+    };
+    const handleFocusOut = () => setTimeout(handleResize, 100);
+    const handleFocusIn = (e) => {
+      const el = e.target;
+      if (!el || !el.matches || !el.matches('input, textarea, select')) return;
+      if (!Capacitor.isNativePlatform() && !('ontouchstart' in window)) return; // desktop has no keyboard to dodge
+      setTimeout(() => {
+        try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) { /* old WebView */ }
+      }, 300);
+    };
+    // Rotating resets what "full height" means.
+    const handleOrientation = () => { fullHeight = 0; setTimeout(handleResize, 300); };
+
+    (vv || window).addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleOrientation);
+    document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener('focusout', handleFocusOut);
+    return () => {
+      (vv || window).removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleOrientation);
+      document.removeEventListener('focusin', handleFocusIn);
+      document.removeEventListener('focusout', handleFocusOut);
+    };
+  }, []);
+
+  // pullDistance is half the finger travel, so this fires after ~120px of pull.
+  const PULL_TRIGGER_PX = 60;
+  const handlePullStart = (e) => {
+    const s = backButtonRef.current;
+    if (!s?.currentUser || s.modalOpen || refreshing) return;
+    if (mainRef.current && mainRef.current.scrollTop <= 0) {
+      pullStartY.current = e.touches[0].clientY;
+    }
+  };
+  const handlePullMove = (e) => {
+    if (pullStartY.current === null) return;
+    const delta = e.touches[0].clientY - pullStartY.current;
+    if (delta <= 0 || (mainRef.current && mainRef.current.scrollTop > 0)) {
+      if (pullDistance) setPullDistance(0);
+      return;
+    }
+    setPullDistance(Math.min(delta * 0.5, 100));
+  };
+  const handlePullEnd = () => {
+    if (pullStartY.current === null) return;
+    pullStartY.current = null;
+    if (pullDistance >= PULL_TRIGGER_PX) {
+      refreshData({ showSpinner: true });
+    }
+    setPullDistance(0);
+  };
 
   // Update dynamic CSS theme rules
   useEffect(() => {
@@ -672,6 +828,7 @@ export default function App() {
         setModalTitle(title);
       }
     };
+    backButtonRef.current = { modalOpen, currentUser, goBack: navProps.goBack };
 
     // Authentication Guard
     if (!currentUser) {
@@ -806,7 +963,7 @@ export default function App() {
 
       {/* APP MOBILE VIEWPORT CONTAINER */}
       <div className="app-frame-wrapper">
-        <div className={`device-frame ${!currentUser ? 'auth-screen' : ''}`}>
+        <div className={`device-frame ${!currentUser ? 'auth-screen' : ''} ${keyboardOpen ? 'keyboard-open' : ''}`}>
 
           {/* Toast Notification Layers */}
           <div className="toast-container">
@@ -837,9 +994,32 @@ export default function App() {
             ))}
           </div>
 
+          {!isOnline && (
+            <div className="offline-banner" role="status">No internet connection. Changes will fail until you are back online.</div>
+          )}
+
+          {(pullDistance > 0 || refreshing) && (
+            <div
+              className={`pull-refresh-indicator ${refreshing ? 'spinning' : ''} ${pullDistance >= PULL_TRIGGER_PX ? 'ready' : ''}`}
+              style={{ transform: `translate(-50%, ${refreshing ? 40 : pullDistance - 20}px)` }}
+              aria-label={refreshing ? 'Refreshing' : 'Pull to refresh'}
+            >
+              ↻
+            </div>
+          )}
+
           {/* Core Routed Screen */}
-          <main className="app-content">
-            {renderActiveView()}
+          <main
+            className="app-content"
+            ref={mainRef}
+            onTouchStart={handlePullStart}
+            onTouchMove={handlePullMove}
+            onTouchEnd={handlePullEnd}
+            onTouchCancel={handlePullEnd}
+          >
+            <ErrorBoundary resetKey={currentHash}>
+              {renderActiveView()}
+            </ErrorBoundary>
           </main>
 
           {/* Sticky Bottom floating navigation tab bar */}

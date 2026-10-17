@@ -1,0 +1,422 @@
+================================================================================
+  MILL MATE - COMPLETE GUIDE: FROM DOMAIN NAME TO LIVE DEPLOYMENT
+  Alagiri Paper Mills
+  Prepared: 8 October 2026
+================================================================================
+
+CONTENTS
+  1. Our plan in one page
+  2. Costs
+  3. Who does what
+  PART A  Buy the domain name                  (owner / you)     ~15 min
+  PART B  Create the company email (Zoho)      (owner / you)     ~20 min
+  PART C  Create the AWS account               (owner / you)     ~30 min
+  PART D  Secure the AWS account               (owner / you)     ~10 min
+  PART E  Give the developer access            (owner / you)     ~5 min
+  PART F  Build the server on AWS              (developer)       ~1-2 hours
+  PART G  Point api.<domain> at the server     (owner + developer) ~10 min
+  PART H  Switch the apps to the new server    (developer)       ~1 hour
+  PART I  After go-live                        (both)
+  4. Checklist: what to send the developer
+  5. If something goes wrong
+
+
+================================================================================
+1. OUR PLAN IN ONE PAGE
+================================================================================
+
+WHY WE ARE DOING THIS
+  Mill Mate (web app + Android/iOS apps) talks to a backend "API" server that
+  stores all orders, users and attachments. Today that server runs on Render.
+  We are moving it to Amazon Web Services (AWS) in Mumbai, so that:
+    - the company owns and controls its own server, data and bills,
+    - the app is fast for users in India,
+    - attachments (LR copies, proof of receipt) are stored safely in S3,
+    - the database is backed up automatically every night.
+
+WHY WE NEED A DOMAIN FIRST
+  The first attempt failed because the AWS account was tied to an email and an
+  AWS organization we did not fully control (region blocked, sign-in and phone
+  verification problems). So we start clean:
+
+    1. Buy a domain the company owns        alagiriduplex.com
+    2. Create a company email on it         mill_mate@alagiriduplex.com
+    3. Open a NEW, standalone AWS account   using mill_mate@alagiriduplex.com
+    4. Deploy the API server on AWS         at  https://api.alagiriduplex.com
+
+  The same domain gives us a professional email AND the secure web address of
+  the server, which the Android/iOS apps need (they only connect over HTTPS).
+
+WHAT THE FINAL SETUP LOOKS LIKE
+
+   Phones (Android / iOS app)  --+
+                                 +--HTTPS-->  api.alagiriduplex.com
+   Web app (Vercel)            --+                  |
+                                          EC2 server in Mumbai (AWS)
+                                           - Mill Mate API (Node.js)
+                                           - Database file (SQLite)
+                                           - Free HTTPS certificate (Caddy)
+                                                    |
+                                          S3 storage (AWS, private)
+                                           - uploads/  attachments
+                                           - backups/  nightly database copy
+
+  The web app itself stays on Vercel (free). Only the API moves to AWS.
+
+
+================================================================================
+2. COSTS (approximate)
+================================================================================
+
+  Item                                        One-time / yearly    Monthly
+  ------------------------------------------  -------------------  ------------
+  Domain (.in) at GoDaddy                     Rs 600-900 / year    -
+    (or .com)                                 Rs 900-1,300 / year  -
+  Company email - Zoho Mail Forever Free      free (up to 5 users) -
+    (or Zoho Mail Lite if Free not offered)   -                    ~Rs 60-90/user
+  AWS server (EC2 t3.micro, Mumbai)           -                    ~US$ 8-9
+  AWS fixed IP address                        -                    ~US$ 3.6
+  AWS disk 20 GB                              -                    ~US$ 2
+  AWS S3 storage + backups                    -                    under US$ 1
+  ------------------------------------------  -------------------  ------------
+  AWS total                                                        ~US$ 12-15
+                                                                   (~Rs 1,000-1,300)
+
+  New AWS accounts get free-tier credits, so the first months cost little.
+  A budget alert (Part D) emails you if AWS spending goes above US$ 20/month.
+  Prices change; always check the renewal price and the AWS pricing page.
+
+
+================================================================================
+3. WHO DOES WHAT
+================================================================================
+
+  Owner / you : anything that needs the company's identity, money or phone -
+                buying the domain, the email, the AWS account, paying.
+  Developer   : everything technical on AWS - server, storage, security,
+                deployment, updating the apps.
+
+  The company owns every account. The developer only gets a limited access key
+  that can be deleted at any time.
+
+
+================================================================================
+PART A - BUY THE DOMAIN NAME   (owner / you, about 15 minutes)
+================================================================================
+
+  We use GoDaddy India: prices in rupees, UPI or card payment, and Zoho can set
+  up the email records on GoDaddy automatically.
+
+  A1. Choose a name
+      - Short, easy to spell, no hyphens.
+      - Ideas: alagirimills.in, alagiripaper.in, alagiripapers.com
+      - .in suits an Indian business and is cheaper; .com looks international.
+
+  A2. Check it is free
+      - Go to https://www.godaddy.com/en-in
+      - Type the name, press Search. If "taken", try the next idea.
+
+  A3. Add to cart - and SKIP the extras
+      - Click "Add to cart" on the exact name you want.
+      - Say NO / skip to: Microsoft 365, Professional Email, website builder,
+        hosting, SSL certificate. We do not need any of them.
+      - Keep "Full Domain Privacy" only if it is free.
+      - Term: 1 year is fine; 2-3 years means less renewal worry.
+
+  A4. Create the GoDaddy account and pay
+      - Use the OWNER's personal email and mobile number. This is the most
+        important login of all - keep the password safe.
+      - Domain owner (registrant): "Alagiri Paper Mills" + business address.
+      - Pay by UPI or card.
+
+  A5. Secure it
+      - Account settings > Login & PIN > turn ON 2-step verification.
+      - My Products > your domain > make sure AUTO-RENEW is ON.
+        (If the domain expires, both the email AND the app stop working.)
+
+  RESULT: you own  alagiriduplex.com
+
+
+================================================================================
+PART B - CREATE THE COMPANY EMAIL WITH ZOHO   (owner / you, about 20 minutes)
+================================================================================
+
+  B1. Sign up
+      - Go to https://www.zoho.com/mail  > "Sign up" / "Business email".
+      - Choose the "Forever Free" plan (up to 5 users). If it is not shown,
+        choose "Mail Lite".
+      - Choose "Sign up with a domain I already own", enter your domain.
+      - Enter the owner's name and mobile, and create the first mailbox:
+            mill_mate@alagiriduplex.com
+
+  B2. Verify you own the domain
+      - Zoho asks for verification. Choose "GoDaddy" as the DNS provider.
+      - Click "Proceed" / "Auto-configure", sign in to GoDaddy, click
+        "Connect" / "Authorize".
+      - If auto-configure fails: choose the "TXT" method, copy the record Zoho
+        shows into GoDaddy (My Products > Domain > DNS > Add new record), then
+        click "Verify" in Zoho.
+
+  B3. Add the email records (Zoho shows a checklist)
+      Use auto-configure again, or add each record by hand in GoDaddy DNS:
+
+        Record           What it does
+        ---------------  ------------------------------------------------
+        MX (3 records)   lets you RECEIVE email
+        SPF  (TXT)       stops your emails going to spam
+        DKIM (TXT)       proves emails really come from you
+        DMARC (TXT)      extra protection against fake emails
+
+      Wait until every item shows a green tick (15 minutes to a few hours).
+
+  B4. Create addresses
+      - mill_mate@alagiriduplex.com  - owner's main mailbox. USED FOR AWS.
+      - Optional: it@alagiriduplex.com as an alias of mill_mate, for technical
+        accounts.
+
+  B5. Secure and test
+      - Zoho: Settings > Security > turn ON 2-step verification.
+      - Install the Zoho Mail app on the owner's phone and sign in.
+      - From any Gmail, send a mail to mill_mate@alagiriduplex.com and reply back.
+        Both should arrive, and the reply should NOT land in spam.
+
+  RESULT: a working company email, mill_mate@alagiriduplex.com
+
+
+================================================================================
+PART C - CREATE THE AWS ACCOUNT   (owner / you, about 30 minutes)
+================================================================================
+
+  Have ready: company PAN, GSTIN, GST certificate, a card with online /
+  international payments enabled, and a mobile number that has NEVER been used
+  on another AWS account.
+
+  TIP: do this in a Chrome INCOGNITO window (Ctrl+Shift+N). Old AWS cookies from
+  the first attempt caused "Bad request" errors before.
+
+  C1. Go to https://aws.amazon.com > "Create an AWS Account".
+      - Email:        mill_mate@alagiriduplex.com
+      - Account name: Alagiri Paper Mills
+      - Enter the code AWS emails you. Set a strong root password and store it
+        safely (owner keeps it).
+
+  C2. Contact information
+      - Choose "Business".
+      - Company name, address, phone - EXACTLY as on the GST certificate.
+      - Indian addresses are billed by AISPL (Amazon Internet Services Pvt Ltd);
+        enter PAN, and GSTIN to get GST invoices.
+
+  C3. Plan: choose the PAID plan  (NOT the Free plan)
+      - The Free plan ends after 6 months or when credits run out and then the
+        account is CLOSED, and it blocks some services. Not safe for a live
+        business app.
+      - "Paid" just means you pay for what is used (~US$ 12-15/month for us);
+        free credits still apply at the start.
+
+  C4. Confirm your identity
+      - Primary purpose: "Business operations"
+      - Ownership type: as on the GST certificate ("Constitution of Business")
+        or the 4th letter of the company PAN:
+            Private Ltd / Ltd company     (PAN 4th letter C)  -> Company
+            Partnership                   (F)                 -> Partnership
+            LLP (name ends in "LLP")      (F)                 -> Limited liability partnership
+            Proprietorship                (P)                 -> Sole proprietorship
+            Hindu Undivided Family        (H)                 -> Hindu undivided family
+        Never choose "Individual" or "Government organization".
+      - Tick the consent box > Continue. Enter PAN / GSTIN / name / address
+        exactly as on the documents.
+
+  C5. Payment card
+      - Card must allow online/international payments. AWS charges about Rs 2
+        to verify it and refunds it.
+
+  C6. Phone verification
+      - Country: India (+91). Number: the 10 digits only, no 0 or +91.
+      - If SMS fails, try "Voice call" (type the 4-digit code shown on screen
+        on the phone keypad).
+      - After a failure, WAIT 1-2 hours before trying again (repeated attempts
+        get blocked). Last time this gave "error 83740".
+      - Still failing? Free form, no sign-in needed:
+        https://support.aws.amazon.com/#/contacts/aws-account-verification
+
+  C7. Support plan: "Basic support - Free".
+
+  RESULT: a new standalone AWS account owned by the company.
+          IMPORTANT: do NOT add it to any AWS Organization. (That is what
+          blocked the Mumbai region last time.)
+
+
+================================================================================
+PART D - SECURE THE AWS ACCOUNT   (owner / you, about 10 minutes)
+================================================================================
+
+  D1. Turn on MFA for the root user
+      - Sign in as Root user. Top-right account name > "Security credentials".
+      - "Multi-factor authentication (MFA)" > "Assign MFA device".
+      - Name: owner-phone. Type: Authenticator app.
+      - Scan the QR code with Google Authenticator / Microsoft Authenticator on
+        the owner's phone, enter two codes in a row > "Add MFA".
+
+  D2. Budget alert
+      - Search "Budgets" in the top bar > Create budget > Use a template >
+        "Monthly cost budget".
+      - Amount: 20 USD. Email: mill_mate@alagiriduplex.com > Create budget.
+
+  D3. Region
+      - Top-right region menu > choose "Asia Pacific (Mumbai) ap-south-1".
+
+
+================================================================================
+PART E - GIVE THE DEVELOPER ACCESS   (owner / you, about 5 minutes)
+================================================================================
+
+  Never share the root password. Instead create a separate user that can be
+  deleted at any time.
+
+  E1. Search "IAM" > left menu "Users" > "Create user".
+  E2. User name: millmate-developer. Do NOT tick console access. > Next.
+  E3. "Attach policies directly" > tick "AdministratorAccess" > Next >
+      Create user.
+  E4. Open the user > "Security credentials" tab > "Create access key" >
+      "Command Line Interface (CLI)" > tick the confirmation > Create.
+  E5. Click "Download .csv file". The secret key is shown only once.
+  E6. Send the developer:
+        - the .csv FILE (privately - NOT pasted into a chat or email body)
+        - the 12-digit AWS Account ID (top-right of the console)
+
+  This key is deleted after go-live (Part I).
+
+
+================================================================================
+PART F - BUILD THE SERVER ON AWS   (developer, about 1-2 hours)
+================================================================================
+
+  Everything is already prepared in the project (docs/AWS_GUIDE.md, deploy/).
+  The owner does nothing here; the developer will report when each step is done.
+
+  F1. Storage (S3 bucket) in Mumbai
+      - Private, encrypted, keeps old versions of files so a deleted or
+        overwritten attachment can be recovered.
+      - Database backups older than 60 days are deleted automatically.
+
+  F2. Server permission (IAM role)
+      - The server may only read/write attachments and write backups.
+      - It cannot delete files or read backups. No AWS keys are stored on the
+        server.
+
+  F3. Launch the server (EC2)
+      - Ubuntu 24.04, t3.micro, 20 GB disk, Mumbai.
+      - Firewall: only web traffic (HTTP/HTTPS) open to the world; remote
+        login (SSH) only from the developer's IP.
+      - A fixed public IP address (Elastic IP), so the address never changes.
+
+  F4. Install the API (after Part G is done)
+      - One script installs Node 22, Caddy (free HTTPS certificate), the Mill
+        Mate service and the nightly backup.
+      - First admin password for the app (SEED_PASSWORD) is set here - the
+        owner chooses it, or the developer generates one and sends it.
+
+  F5. Tests
+      - https://api.alagiriduplex.com/api/health shows {"ok":true}
+      - Login works; uploading an LR copy lands in S3; "View LR" opens it.
+      - A backup appears in S3; after a reboot everything still works.
+
+  Note: these server scripts have been reviewed but have never run on a real
+  AWS server. The first run is done on a fresh server, so if anything fails it
+  is fixed, and the server is simply deleted and recreated - nothing live is
+  affected.
+
+
+================================================================================
+PART G - POINT api.<domain> AT THE SERVER   (owner + developer, ~10 minutes)
+================================================================================
+
+  After F3 the developer sends you the server's fixed IP address
+  (e.g. 13.233.10.20). Then in GoDaddy:
+
+  G1. My Products > your domain > DNS > "Add new record".
+  G2. Type: A     Name: api     Value: <the IP from the developer>
+      TTL: 1 hour (default) > Save.
+  G3. Tell the developer. It usually works within minutes (up to a few hours).
+
+  Do NOT change or delete the Zoho email records (MX, SPF, DKIM, DMARC) -
+  only ADD this one record.
+
+  RESULT: api.alagiriduplex.com points to the server.
+
+
+================================================================================
+PART H - SWITCH THE APPS TO THE NEW SERVER   (developer, about 1 hour)
+================================================================================
+
+  H1. Web app (Vercel): set the API address to
+      https://api.alagiriduplex.com/api and redeploy.
+  H2. Android: the API address is built into the app, so a new version is
+      built (new versionCode) and uploaded to the Play Store / shared as APK.
+  H3. iOS: synced and archived again on the Mac.
+  H4. Test login, orders, attachments on web, Android and iOS.
+  H5. When everything works, shut down the old Render service so it stops
+      billing.
+
+  Note: users of the Android app must UPDATE to the new version; the old
+  version keeps talking to Render until Render is shut down.
+
+
+================================================================================
+PART I - AFTER GO-LIVE   (both)
+================================================================================
+
+  I1. Owner: delete the developer access key
+      (IAM > Users > millmate-developer > Security credentials > Delete).
+      A new one can be created whenever maintenance is needed.
+  I2. Owner: once a month, look at Billing > Bills; the budget alert also
+      warns automatically.
+  I3. Developer: deploying new app versions takes ~20 seconds of downtime;
+      backups run every night and are kept 60 days.
+  I4. Keep these logins safe and with the owner:
+        - GoDaddy (domain)           - renews every year, auto-renew ON
+        - Zoho (email)
+        - AWS root (admin@...)       - with MFA on the owner's phone
+
+
+================================================================================
+4. CHECKLIST - WHAT TO SEND THE DEVELOPER
+================================================================================
+
+  [ ] Domain name bought (Part A)                     alagiriduplex.com
+  [ ] Email works (Part B, test passed)               mill_mate@alagiriduplex.com
+  [ ] AWS account created, Paid plan (Part C)
+  [ ] MFA + budget done (Part D)
+  [ ] Access key .csv file + 12-digit Account ID (Part E) - sent privately
+  [ ] Admin password for the app (or ask developer to generate one)
+  [ ] Added the "api" A record in GoDaddy (Part G, when developer asks)
+
+
+================================================================================
+5. IF SOMETHING GOES WRONG
+================================================================================
+
+  "Bad request" on AWS sign-in
+      Old cookies. Use an Incognito window, or clear cookies for
+      aws.amazon.com and amazon.com.
+
+  Phone verification fails (e.g. error 83740)
+      Check +91 and 10 digits; try Voice call instead of SMS; wait 1-2 hours;
+      try a number from a different carrier that was never used on AWS; or use
+      https://support.aws.amazon.com/#/contacts/aws-account-verification
+
+  Identity verification rejected
+      Ownership type, PAN, name and address must match the GST certificate
+      exactly.
+
+  Emails go to spam / don't arrive
+      In Zoho's domain checklist, every record (MX, SPF, DKIM, DMARC) must show
+      a green tick. DNS changes can take a few hours.
+
+  Any screen looks different from this guide
+      Take a screenshot and send it to the developer before clicking further.
+      Wrong settings in account, billing or DNS pages can be hard to undo.
+
+================================================================================
+  END OF GUIDE
+================================================================================

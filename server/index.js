@@ -14,9 +14,11 @@ import fileRoutes from './routes/files.js';
 import { s3Enabled, getBucket } from './storage.js';
 
 const app = express();
-// Render (and most PaaS hosts) terminate TLS at a proxy, so req.protocol/req.ip
-// would otherwise report the proxy's values instead of the real client's.
-app.set('trust proxy', true);
+// Caddy (AWS) or the PaaS edge terminates TLS in front of the API, so
+// req.protocol/req.ip would otherwise report the proxy's values. Trust exactly
+// one hop: `true` would take the left-most X-Forwarded-For entry, which the
+// client can fake (and so dodge the login throttle).
+app.set('trust proxy', 1);
 
 const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map(o => o.trim());
 app.use(cors({ origin: allowedOrigins, credentials: false }));
@@ -41,8 +43,17 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/files', fileRoutes);
 
+// Unknown API routes get JSON like every other API error, not Express's HTML page.
+app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
+
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'The request body is not valid JSON.' });
+  }
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'The upload is too large. Please use a smaller file.' });
+  }
   console.error(err);
   res.status(500).json({ error: 'Internal server error' });
 });

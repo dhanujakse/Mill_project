@@ -3,11 +3,18 @@ import bcrypt from 'bcryptjs';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { serializeUser } from '../serializers.js';
-import { validateUserFields, asText } from '../validation.js';
+import { validateUserFields, asText, validatePassword, USER_ROLES, NAME_REGEX, EMAIL_REGEX, PHONE_REGEX } from '../validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 
 const router = Router();
 router.use(requireAuth);
+
+const departmentExists = (name) => (
+  typeof name === 'string' && !!db.prepare('SELECT name FROM departments WHERE name = ? COLLATE NOCASE').get(name)
+);
+const otherActiveMainAdmins = (id) => (
+  db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'Main Admin' AND enabled = 1 AND id != ?").get(id).n
+);
 
 // The avatar palette offered in the app (Customize Avatar).
 const AVATAR_COLORS = ['yellow', 'black', 'orange', 'darkbrown'];
@@ -29,7 +36,13 @@ router.post('/', requireRole('Main Admin'), asyncHandler(async (req, res) => {
   const validationError = validateUserFields({ name, email, phone });
   if (validationError) return res.status(400).json({ error: validationError });
   if (!body.role) return res.status(400).json({ error: 'Role is required.' });
+  if (!USER_ROLES.includes(body.role)) return res.status(400).json({ error: 'Unknown role.' });
   if (!body.department) return res.status(400).json({ error: 'Department is required.' });
+  if (!departmentExists(body.department)) return res.status(400).json({ error: 'Unknown department.' });
+  if (asText(body.password)) {
+    const pwError = validatePassword(asText(body.password));
+    if (pwError) return res.status(400).json({ error: pwError });
+  }
 
   const existingUsername = db.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username);
   if (existingUsername) return res.status(409).json({ error: 'Username already exists. Please choose another.' });
@@ -72,6 +85,19 @@ router.put('/:id', asyncHandler(async (req, res) => {
 
   if (isAdmin && row.role === 'Main Admin' && body.disabled) {
     return res.status(400).json({ error: 'Main Admin cannot be disabled.' });
+  }
+  if (isAdmin && body.role !== undefined && body.role !== row.role) {
+    if (!USER_ROLES.includes(body.role)) return res.status(400).json({ error: 'Unknown role.' });
+    if (row.role === 'Main Admin' && otherActiveMainAdmins(row.id) === 0) {
+      return res.status(400).json({ error: 'This is the only Main Admin. Make someone else Main Admin first.' });
+    }
+  }
+  if (isAdmin && body.department !== undefined && body.department !== currentProfile.department && !departmentExists(body.department)) {
+    return res.status(400).json({ error: 'Unknown department.' });
+  }
+  if (isAdmin && asText(body.newPassword)) {
+    const pwError = validatePassword(asText(body.newPassword));
+    if (pwError) return res.status(400).json({ error: pwError });
   }
 
   const identityChanged = ['name', 'email', 'phone'].some(
@@ -165,7 +191,10 @@ router.post('/:id/reset-password', requireRole('Main Admin'), asyncHandler(async
     return res.status(400).json({ error: 'newPassword must be text.' });
   }
   let tempPassword = asText(req.body?.newPassword);
-  if (!tempPassword) {
+  if (tempPassword) {
+    const pwError = validatePassword(tempPassword);
+    if (pwError) return res.status(400).json({ error: pwError });
+  } else {
     const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
     tempPassword = Array.from({ length: 12 }, () => charset.charAt(Math.floor(Math.random() * charset.length))).join('');
   }

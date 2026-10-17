@@ -25,10 +25,17 @@ router.post('/', (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
-  const existing = db.prepare('SELECT id FROM requests WHERE id = ?').get(req.params.id);
+  const existing = db.prepare('SELECT data FROM requests WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Request not found' });
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    return res.status(400).json({ error: 'Request body must be an object.' });
+  }
 
-  const requestData = { ...req.body, id: req.params.id };
+  // Merge onto the stored record: a save that only sends some fields (e.g.
+  // {status:"Rejected"}) used to wipe everything else on the order.
+  let stored = {};
+  try { stored = JSON.parse(existing.data) || {}; } catch (e) { stored = {}; }
+  const requestData = { ...stored, ...req.body, id: req.params.id };
   db.prepare("UPDATE requests SET status = ?, data = ?, updated_at = datetime('now') WHERE id = ?")
     .run(requestData.status || null, JSON.stringify(requestData), req.params.id);
   res.json(requestData);

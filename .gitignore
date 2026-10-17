@@ -13,6 +13,7 @@ dist-ssr
 *.local
 .env
 *.apk
+*.aab
 
 # Backend server
 server/.env

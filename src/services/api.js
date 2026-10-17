@@ -76,20 +76,33 @@ export const clearAuthToken = () => localStorage.removeItem(TOKEN_KEY);
 let unauthorizedHandler = null;
 export const onUnauthorized = (handler) => { unauthorizedHandler = handler; };
 
-const apiFetch = async (path, { method = 'GET', body, skipAuth = false } = {}) => {
+// A stalled mobile connection would otherwise leave a request (and the
+// spinner waiting on it) hanging forever. Uploads get longer.
+const REQUEST_TIMEOUT_MS = 30000;
+const UPLOAD_TIMEOUT_MS = 120000;
+
+const apiFetch = async (path, { method = 'GET', body, skipAuth = false, timeoutMs = REQUEST_TIMEOUT_MS } = {}) => {
   const headers = { 'Content-Type': 'application/json' };
   const token = getAuthToken();
   if (token && !skipAuth) headers.Authorization = `Bearer ${token}`;
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res;
   try {
     res = await fetch(`${getApiBaseUrl()}${path}`, {
       method,
       headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal
     });
   } catch (networkErr) {
+    if (networkErr.name === 'AbortError') {
+      throw new Error('The server is taking too long to respond. Check your connection and try again.');
+    }
     throw new Error('Could not reach the server. Check your connection and try again.');
+  } finally {
+    clearTimeout(timer);
   }
 
   if (res.status === 401 && !skipAuth) {
@@ -163,7 +176,7 @@ export const apiService = {
     }
     if (fileStorageMode !== 's3') return value;
 
-    const { ref } = await apiFetch('/files', { method: 'POST', body: { dataUrl: value, name } });
+    const { ref } = await apiFetch('/files', { method: 'POST', body: { dataUrl: value, name }, timeoutMs: UPLOAD_TIMEOUT_MS });
     return ref;
   },
 
@@ -193,7 +206,27 @@ export const apiService = {
   // AUDIT TRAIL LOGS API
   // ------------------------------------------------
   async getLogs() {
-    return apiFetch('/logs');
+    const rows = await apiFetch('/logs');
+    // One malformed entry (e.g. a log posted as {}) used to crash the Audit
+    // Logs page for every admin, because the screens call .toLowerCase() /
+    // .replace() on these fields. Coerce every row to the expected shape.
+    const text = (v) => (v === undefined || v === null ? '' : typeof v === 'string' ? v : String(v));
+    return (Array.isArray(rows) ? rows : [])
+      .filter(log => log && typeof log === 'object')
+      .map(log => ({
+        ...log,
+        timestamp: text(log.timestamp),
+        userName: text(log.userName) || 'Unknown',
+        role: text(log.role),
+        action: text(log.action) || 'Unknown action',
+        previousValue: text(log.previousValue),
+        updatedValue: text(log.updatedValue),
+        details: text(log.details)
+      }));
+  },
+
+  async deleteLogs(logIds) {
+    return apiFetch('/logs/bulk-delete', { method: 'POST', body: { ids: logIds } });
   },
 
   async addLog(logData) {

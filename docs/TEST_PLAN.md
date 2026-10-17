@@ -160,8 +160,14 @@ Severity: **S1** outage / data loss / security breach, **S2** major function bro
 |---|---|---|
 | BUG-01 | **Fixed.** Async routes are wrapped so an unexpected error returns a JSON 500 instead of killing the process, and non-text input to login, password, user create/update and reset-password now returns 400 | 19 crash-vector requests, server stayed up for every one; wrapper proven with a route that throws |
 | BUG-02 | **Fixed.** Pending requests are never auto-delayed, and requests already wrongly marked Delayed (never approved) are restored to Pending on the next load | Browser test with 6 order types; second load adds no duplicate history |
-| BUG-03, 05, 06, 07, 08, 09, 10, 11 | **Accepted / not planned** - the owner confirmed all roles keep broad access by design (only approving and PO generation are limited to Admin and Sub Admin) | - |
-| BUG-04 | Open (no login throttling) | - |
+| BUG-03, 06 | **Accepted / not planned** - the owner confirmed all roles keep broad access by design (only approving and PO generation are limited to Admin and Sub Admin) | - |
+| BUG-04 | **Fixed (1.2).** 5 wrong passwords per device + username, or 30 per device, block login for 15 minutes (429 with the minutes left). The server trusts exactly one proxy hop, so a forged `X-Forwarded-For` cannot reset the count | Local probe: 6th attempt 429, other accounts unaffected |
+| BUG-05 | **Fixed (1.2).** `POST /logs` needs an `action`, coerces the text fields and fills user/role/timestamp; the app also cleans every row it loads, so old malformed rows show as "Unknown" instead of crashing the page. Posting a log under another name is still allowed (access model) | Browser: Audit Logs renders with `{}` rows in the DB |
+| BUG-07 | **Fixed (1.2).** Role must be Main Admin / Sub Admin / Employee; department must exist (checked when it changes); passwords at least 6 characters (same as the app); mobile numbers must start with 6-9; the last active Main Admin cannot be demoted. Also fixed: an employee editing their own name/email/phone got a 500 (missing import) | Local probe |
+| BUG-08 | **Fixed (1.2).** `PUT /requests/:id`, `PUT /suppliers/:id` and `PUT /settings/branding` merge onto the stored record | Local probe |
+| BUG-09 | **Fixed (1.2).** Supplier needs a company name; duplicate id is 409; letters in phone numbers rejected (kept lenient otherwise, because approving an order auto-creates the typed-in supplier); webhook URL must be http(s) | Local probe |
+| BUG-10 | **Fixed (1.2).** Malformed JSON 400, oversize body 413, unknown `/api` route JSON 404 | Local probe |
+| BUG-11 | **Fixed (1.2).** The error screen clears on navigation, and a second boundary around the page keeps the bottom nav and back button working | - |
 
 **Verified PASS (keep as regression checks):** missing or garbled token rejected (401); SQL-injection style username rejected; empty password 400; 100 KB password handled; employee blocked from users, suppliers, logs and branding (403); an employee **cannot** escalate their own role through `PUT /users/:id`; duplicate email (case-insensitive) 409; user name / email / short-phone validation; duplicate department 409; HTML in a supplier name is shown as literal text (no XSS).
 
@@ -711,7 +717,18 @@ Volumes: 1,000 requests, 200 suppliers, 20,000 logs, 500 notifications, 30% of r
 9. Hard-reload on `#order-details?id=<id>` while logged in: page renders (no blank screen).
 10. Check the browser console: no errors during steps 1-9.
 
-### 11.2 Release gate (all must be true)
+### 11.2 Phone app smoke (run on a real Android phone for every mobile release)
+
+1. Install the release APK over the previous version; it opens logged in.
+2. **Back button:** Home -> Approvals -> an order -> back, back returns step by step; back on Home closes the app; with a popup open, back closes only the popup.
+3. **Pull to refresh:** create an order from another phone or the website, pull down on Home or Approvals, and it appears.
+4. **Resume:** switch to another app for a minute and come back; new data loads without a restart.
+5. **Offline:** turn on airplane mode; the "No internet connection" bar appears; turn it off; the bar goes and data reloads.
+6. **Keyboard:** on Create Request, tap the last field; it stays visible above the keyboard and the bottom bar hides while typing.
+7. **Notch / gesture bar:** nothing is hidden under the status bar or the bottom gesture area (Home, Settings, a popup).
+8. **Camera photo:** attach a camera photo as proof of receipt; it uploads quickly and opens from Order Details.
+
+### 11.3 Release gate (all must be true)
 
 | # | Gate |
 |---|---|

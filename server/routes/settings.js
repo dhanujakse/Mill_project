@@ -24,8 +24,14 @@ router.get('/branding', (req, res) => {
 });
 
 router.put('/branding', requireAuth, requireRole('Main Admin'), (req, res) => {
-  setSetting('branding', req.body || {});
-  res.json(req.body || {});
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    return res.status(400).json({ error: 'Branding must be an object.' });
+  }
+  // Merge so saving one field (e.g. appName) can't delete billingLocations and
+  // the colors - an empty billingLocations list once blanked the whole app.
+  const branding = { ...getSetting('branding', {}), ...req.body };
+  setSetting('branding', branding);
+  res.json(branding);
 });
 
 // Any authenticated role can read the webhook URL (not just Main Admin) -
@@ -37,7 +43,10 @@ router.get('/webhook-url', requireAuth, (req, res) => {
 });
 
 router.put('/webhook-url', requireAuth, requireRole('Main Admin'), (req, res) => {
-  const webhookUrl = (req.body?.webhookUrl || '').trim();
+  const webhookUrl = typeof req.body?.webhookUrl === 'string' ? req.body.webhookUrl.trim() : '';
+  if (webhookUrl && !/^https?:\/\//i.test(webhookUrl)) {
+    return res.status(400).json({ error: 'The webhook URL must start with http:// or https://' });
+  }
   setSetting('webhookUrl', webhookUrl);
   res.json({ webhookUrl });
 });

@@ -33,6 +33,41 @@ export const Icons = {
 // Largest attachment accepted (the server enforces the same limit).
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
+// Phone cameras produce 3-8 MB JPEGs, which made saving an order slow on
+// mobile data. Large JPEGs are scaled down before upload; everything else
+// (PDF, Word, Excel, PNG, small photos) is read unchanged. Only JPEG is
+// re-encoded because the server checks a file's bytes match its extension.
+const UPLOAD_PHOTO_MAX_SIDE = 1600;
+const UPLOAD_PHOTO_MIN_BYTES = 400 * 1024;
+const readFileForUpload = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onerror = () => reject(reader.error || new Error('Could not read the file.'));
+  reader.onload = () => {
+    const original = reader.result;
+    if (file.type !== 'image/jpeg' || file.size < UPLOAD_PHOTO_MIN_BYTES) {
+      resolve(original);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, UPLOAD_PHOTO_MAX_SIDE / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        const compressed = canvas.toDataURL('image/jpeg', 0.8);
+        resolve(compressed.length < original.length ? compressed : original);
+      } catch (err) {
+        resolve(original);
+      }
+    };
+    img.onerror = () => resolve(original); // e.g. a format this WebView can't decode
+    img.src = original;
+  };
+  reader.readAsDataURL(file);
+});
+
 const looksLikeImage = (value) =>
   typeof value === 'string' && (value.startsWith('data:image') || /\.(png|jpe?g)$/i.test(value));
 
@@ -785,13 +820,13 @@ export function CreateRequestView({ state, navigateTo, goBack, addNotification, 
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setAttachedFile(reader.result);
+    try {
+      setAttachedFile(await readFileForUpload(file));
       setAttachedFileName(file.name);
       state.showToast("Upload Success", `${file.name} attached successfully.`, "success");
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      state.showToast("Upload Error", "Could not read the file. Please try again.", "success");
+    }
   };
 
   const handleBillToChange = (val) => {
@@ -3403,14 +3438,12 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
       return;
     }
     try {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setProofFile(reader.result);
-        setProofFileName(file.name || `Proof_Camera_${Date.now()}.jpg`);
-        state.showToast("Proof Captured", "Camera image attached.", "success");
-        renderVerifyReceivedModal(reader.result, file.name || `Proof_Camera_${Date.now()}.jpg`);
-      };
-      reader.readAsDataURL(file);
+      const data = await readFileForUpload(file);
+      const name = file.name || `Proof_Camera_${Date.now()}.jpg`;
+      setProofFile(data);
+      setProofFileName(name);
+      state.showToast("Proof Captured", "Camera image attached.", "success");
+      renderVerifyReceivedModal(data, name);
     } catch (err) {
       state.showToast("Camera Error", "Failed to capture image.", "success");
     }
@@ -3424,14 +3457,11 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
       return;
     }
     try {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setProofFile(reader.result);
-        setProofFileName(file.name);
-        state.showToast("Proof Uploaded", `${file.name} attached.`, "success");
-        renderVerifyReceivedModal(reader.result, file.name);
-      };
-      reader.readAsDataURL(file);
+      const data = await readFileForUpload(file);
+      setProofFile(data);
+      setProofFileName(file.name);
+      state.showToast("Proof Uploaded", `${file.name} attached.`, "success");
+      renderVerifyReceivedModal(data, file.name);
     } catch (err) {
       state.showToast("Upload Error", "Failed to read image file.", "success");
     }
@@ -3664,13 +3694,11 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
                   <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,image/*" style={{ display: 'none' }} onChange={(e) => {
                     const file = e.target.files[0];
                     if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      tempLrFile = reader.result;
+                    readFileForUpload(file).then((data) => {
+                      tempLrFile = data;
                       tempLrFileName = file.name;
                       setModalContent(renderModalBody(""));
-                    };
-                    reader.readAsDataURL(file);
+                    }).catch(() => state.showToast("Upload Error", "Could not read the file. Please try again.", "success"));
                   }} />
                 </label>
               </div>
@@ -3682,13 +3710,11 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
                   <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,image/*" style={{ display: 'none' }} onChange={(e) => {
                     const file = e.target.files[0];
                     if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      tempLrFile = reader.result;
+                    readFileForUpload(file).then((data) => {
+                      tempLrFile = data;
                       tempLrFileName = file.name;
                       setModalContent(renderModalBody(""));
-                    };
-                    reader.readAsDataURL(file);
+                    }).catch(() => state.showToast("Upload Error", "Could not read the file. Please try again.", "success"));
                   }} />
                 </label>
               </div>
@@ -3776,43 +3802,47 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
   const handleUploadSubmit = async () => {
     if (!selectedFile) return;
 
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      let lrRef;
-      try {
-        lrRef = await apiService.storeFile(reader.result, selectedFileName);
-      } catch (err) {
-        state.showToast("Upload Failed", err.message || "Could not upload the file. Please try again.", "success");
-        return;
-      }
-      const remarksStr = `Field [Status] modified from "${req.status}" to "Booked". Field [LR Copy] modified from "None" to "${selectedFileName}".`;
-      const updatedHistory = [...req.history, {
-        status: "Booked",
-        updatedBy: state.currentUser.name,
-        role: state.currentUser.role,
-        timestamp: new Date().toISOString(),
-        remarks: remarksStr
-      }];
+    let lrData;
+    try {
+      lrData = await readFileForUpload(selectedFile);
+    } catch (err) {
+      state.showToast("Upload Failed", "Could not read the file. Please try again.", "success");
+      return;
+    }
 
-      const updatedReq = {
-        ...req,
-        status: "Booked",
-        lrCopy: lrRef,
-        lrFileName: selectedFileName,
-        history: updatedHistory
-      };
+    let lrRef;
+    try {
+      lrRef = await apiService.storeFile(lrData, selectedFileName);
+    } catch (err) {
+      state.showToast("Upload Failed", err.message || "Could not upload the file. Please try again.", "success");
+      return;
+    }
+    const remarksStr = `Field [Status] modified from "${req.status}" to "Booked". Field [LR Copy] modified from "None" to "${selectedFileName}".`;
+    const updatedHistory = [...req.history, {
+      status: "Booked",
+      updatedBy: state.currentUser.name,
+      role: state.currentUser.role,
+      timestamp: new Date().toISOString(),
+      remarks: remarksStr
+    }];
 
-      const saved = await apiService.updateRequest(requestId, updatedReq);
-      state.setRequests(state.requests.map(r => r.id === requestId ? saved : r));
-
-      state.logEvent("Uploaded LR Consignment", req.status, "Booked", remarksStr);
-      addNotification("Order Booked", `LR Copy ${selectedFileName} has been uploaded. Status is now Booked.`, "Both");
-      state.triggerWebhook("status.changed", saved);
-
-      setSelectedFile(null);
-      setSelectedFileName("");
+    const updatedReq = {
+      ...req,
+      status: "Booked",
+      lrCopy: lrRef,
+      lrFileName: selectedFileName,
+      history: updatedHistory
     };
-    reader.readAsDataURL(selectedFile);
+
+    const saved = await apiService.updateRequest(requestId, updatedReq);
+    state.setRequests(state.requests.map(r => r.id === requestId ? saved : r));
+
+    state.logEvent("Uploaded LR Consignment", req.status, "Booked", remarksStr);
+    addNotification("Order Booked", `LR Copy ${selectedFileName} has been uploaded. Status is now Booked.`, "Both");
+    state.triggerWebhook("status.changed", saved);
+
+    setSelectedFile(null);
+    setSelectedFileName("");
   };
 
   const handleViewLr = async () => {
@@ -5402,11 +5432,18 @@ export function AuditLogsView({ state, navigateTo, openModal, closeModal, setMod
             type="button" 
             className="btn-orange" 
             style={{ flex: 1.5, backgroundColor: 'var(--status-red)', borderColor: 'var(--status-red)', cursor: 'pointer' }}
-            onClick={() => {
+            onClick={async () => {
               const logsToDelete = logs.filter((_, idx) => selectedIndices.has(idx));
+              const ids = logsToDelete.map(log => log.logId).filter(Number.isInteger);
+              try {
+                // Deleted on the server so they don't come back on the next reload.
+                if (ids.length > 0) await apiService.deleteLogs(ids);
+              } catch (err) {
+                closeModal();
+                state.showToast("Delete Failed", err.message || "Could not delete the logs. Please try again.", "success");
+                return;
+              }
               const remainingLogs = state.logs.filter(log => !logsToDelete.includes(log));
-              
-              localStorage.setItem("pms_logs", JSON.stringify(remainingLogs));
               state.setLogs(remainingLogs);
               setSelectedIndices(new Set());
               closeModal();
@@ -6196,7 +6233,7 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
       if (!value.trim()) {
         err = "Phone number is required.";
       } else {
-        const phoneRegex = /^(?:\+91)?\d{10}$/;
+        const phoneRegex = /^(?:\+91)?[6-9]\d{9}$/;
         if (!phoneRegex.test(value.trim())) {
           err = "Invalid Indian mobile number (must be a 10-digit number, optionally starting with +91).";
         }
@@ -6258,7 +6295,7 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
 
     if (!phone.trim()) newErrors.phone = "Phone number is required.";
     else {
-      const phoneRegex = /^(?:\+91)?\d{10}$/;
+      const phoneRegex = /^(?:\+91)?[6-9]\d{9}$/;
       if (!phoneRegex.test(phone.trim())) {
         newErrors.phone = "Invalid Indian mobile number (must be a 10-digit number, optionally starting with +91).";
       }
