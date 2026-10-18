@@ -1,5 +1,15 @@
 {
   "appId": "com.alagiri.procurement",
   "appName": "Mill Mate",
-  "webDir": "dist"
+  "webDir": "dist",
+  "plugins": {
+    "CapacitorUpdater": {
+      "autoUpdate": false,
+      "statsUrl": "",
+      "appReadyTimeout": 10000,
+      "autoDeletePrevious": true,
+      "autoDeleteFailed": true,
+      "resetWhenUpdate": true
+    }
+  }
 }

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
+import { checkForAppUpdate } from './services/liveUpdate.js';
 import './App.css';
 import { CONFIG } from './config';
 import { apiService, onUnauthorized, getAuthToken, clearAuthToken, cacheCurrentUser } from './services/api';
@@ -396,6 +397,7 @@ export default function App() {
   const lastRefreshAt = useRef(Date.now());
   const pullStartY = useRef(null);
   const mainRef = useRef(null);
+  const showToastRef = useRef(null); // set below, once showToast exists
 
   const refreshData = async ({ showSpinner = false } = {}) => {
     const user = backButtonRef.current?.currentUser;
@@ -431,10 +433,24 @@ export default function App() {
       if (document.visibilityState === 'visible') refreshDataRef.current();
     }, POLL_MS);
 
+    // Phone app: look for a newer published version on start and on resume.
+    // It is downloaded quietly and switched in when the app next goes to the
+    // background, so the user never loses what they were typing.
+    const checkUpdate = async () => {
+      const version = await checkForAppUpdate();
+      if (version) {
+        showToastRef.current?.("Update downloaded", "The new version starts the next time you reopen Mill Mate.", "info");
+      }
+    };
+
     let resumeListener = null;
     if (Capacitor.isNativePlatform()) {
+      checkUpdate();
       resumeListener = CapacitorApp.addListener('appStateChange', ({ isActive }) => {
-        if (isActive) refreshIfStale();
+        if (isActive) {
+          refreshIfStale();
+          checkUpdate();
+        }
       });
     }
 
@@ -547,6 +563,8 @@ export default function App() {
       setToasts(prev => prev.filter(t => t.id !== newToast.id));
     }, 4000);
   };
+  showToastRef.current = showToast;
+
 
   // Any API call that comes back 401 (expired token, or the account was
   // disabled/deleted server-side while this tab was open) drops the session

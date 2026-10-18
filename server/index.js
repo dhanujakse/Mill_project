@@ -11,6 +11,7 @@ import notificationRoutes from './routes/notifications.js';
 import settingsRoutes from './routes/settings.js';
 import whatsappRoutes from './routes/whatsapp.js';
 import fileRoutes from './routes/files.js';
+import appUpdateRoutes from './routes/appUpdate.js';
 import { s3Enabled, getBucket } from './storage.js';
 
 const app = express();
@@ -42,6 +43,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/files', fileRoutes);
+app.use('/api/app-update', appUpdateRoutes);
 
 // Unknown API routes get JSON like every other API error, not Express's HTML page.
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));

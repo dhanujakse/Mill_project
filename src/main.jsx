@@ -17,6 +17,10 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import { ErrorBoundary } from './components/ErrorBoundary.jsx'
+import { confirmBundleWorks } from './services/liveUpdate.js'
+
+// First thing: tell the OTA updater this bundle loaded (otherwise it rolls back).
+confirmBundleWorks()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

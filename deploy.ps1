@@ -1,10 +1,11 @@
 <#
   Mill Mate - one-command deploy (run on the developer PC, Windows PowerShell).
 
-    .\deploy.ps1                         # commit (asks for a message), push, update the AWS server
+    .\deploy.ps1                         # commit (asks for a message), push, update the server AND the phone apps
     .\deploy.ps1 -Message "Fix X"        # same, with the commit message given up front
     .\deploy.ps1 -Android                # also build the signed Android .aab/.apk for the Play Store
-    .\deploy.ps1 -ServerOnly             # skip git; just redeploy what is already on GitHub
+    .\deploy.ps1 -ServerOnly             # skip git and the phone update; just redeploy what is on GitHub
+    .\deploy.ps1 -NoAppUpdate            # deploy, but don't push this version to installed phones
 
   What it does, in order:
     1. Checks the tools it needs (git, npm, ssh, aws) and the SSH key.
@@ -15,7 +16,16 @@
     5. Runs deploy/ec2/update.sh on the server: pull, install, restart, health check.
     6. Checks https://api.alagiriduplex.com from outside and that the server runs
        the commit you just pushed.
-    7. Optionally builds the Android release (-Android).
+    7. Publishes this web build as an over-the-air update: installed phone apps
+       download it in the background and switch to it the next time they are
+       reopened - no new APK needed (see src/services/liveUpdate.js).
+    8. Optionally builds the Android release (-Android).
+
+  A new APK/IPA is still needed when native parts change (a new Capacitor
+  plugin, permissions, icon, splash). Then raise versionCode in
+  android/app/build.gradle (and the iOS build number to the same value) and run
+  with -Android: phones on an older native build stop receiving OTA updates
+  until they install it, so they never get code their native shell can't run.
 
   The database and /etc/millmate.env on the server are never touched.
   If running scripts is blocked, run once:  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
@@ -24,7 +34,8 @@
 param(
   [string]$Message,
   [switch]$Android,
-  [switch]$ServerOnly
+  [switch]$ServerOnly,
+  [switch]$NoAppUpdate
 )
 
 # 'Continue': in Windows PowerShell 5.1, 'Stop' turns harmless stderr output from
@@ -42,6 +53,12 @@ $SecurityGroup = 'sg-0045e793bab28ba16'
 $Branch        = 'main'
 $JavaHome      = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.12.8-hotspot'
 
+# Every web build gets a unique version; the phone apps compare it with the one
+# they are running. vite.config.js bakes it into the bundle as __APP_BUILD__.
+$AppBuild = Get-Date -Format 'yyyyMMdd-HHmmss'
+$env:APP_BUILD = $AppBuild
+$UpdatesDir = '/var/lib/millmate/app-updates'
+
 function Step($text) { Write-Host ""; Write-Host "==> $text" -ForegroundColor Cyan }
 function Ok($text)   { Write-Host "    $text" -ForegroundColor Green }
 function Info($text) { Write-Host "    $text" }
@@ -54,8 +71,8 @@ function Run([string]$what, [scriptblock]$cmd) {
 }
 
 # ---- 1. Tools ----------------------------------------------------------------
-Step '1/7 Checking tools'
-foreach ($tool in 'git', 'npm', 'ssh', 'aws') {
+Step '1/8 Checking tools'
+foreach ($tool in 'git', 'npm', 'ssh', 'scp', 'aws') {
   if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { Fail "'$tool' is not installed or not on PATH." }
 }
 if (-not (Test-Path $SshKey)) { Fail "SSH key not found at $SshKey" }
@@ -67,12 +84,12 @@ Ok 'git, npm, ssh, the AWS profile and the SSH key are ready.'
 
 if (-not $ServerOnly) {
   # ---- 2. Build check --------------------------------------------------------
-  Step '2/7 Building the website (catches errors before anything is deployed)'
+  Step "2/8 Building the app (version $AppBuild; catches errors before anything is deployed)"
   Run 'npm run build' { npm run build --silent }
   Ok 'Build succeeded.'
 
   # ---- 3. Commit and push ----------------------------------------------------
-  Step '3/7 Saving changes to GitHub'
+  Step '3/8 Saving changes to GitHub'
   $changes = git status --porcelain
   if ($changes) {
     Info 'Uncommitted changes:'
@@ -90,7 +107,7 @@ if (-not $ServerOnly) {
   Run 'git push' { git push -q origin $Branch }
   Ok "Pushed $Branch to GitHub."
 } else {
-  Step '2-3/7 Skipped build and git (-ServerOnly)'
+  Step '2-3/8 Skipped build and git (-ServerOnly)'
 }
 
 $localCommit = (git rev-parse --short HEAD).Trim()
@@ -100,7 +117,7 @@ if ($localCommit -ne $remoteCommit) {
 }
 
 # ---- 4. SSH access for this PC ----------------------------------------------
-Step '4/7 Allowing this PC through the AWS firewall (SSH)'
+Step '4/8 Allowing this PC through the AWS firewall (SSH)'
 try {
   $myIp = (Invoke-RestMethod -Uri 'https://checkip.amazonaws.com' -TimeoutSec 15 -ErrorAction Stop).Trim()
 } catch { Fail "Could not find this PC's public IP address: $($_.Exception.Message)" }
@@ -130,7 +147,7 @@ if ($sshCidrs -contains $myCidr) {
 }
 
 # ---- 5. Update the server ------------------------------------------------------
-Step "5/7 Updating the server ($Domain)"
+Step "5/8 Updating the server ($Domain)"
 # update.sh is copied out of the checkout first: it resets that checkout, and
 # bash must not read a script that is being replaced underneath it.
 $remote = "cp /opt/millmate/deploy/ec2/update.sh /tmp/millmate-update.sh && sudo BRANCH=$Branch bash /tmp/millmate-update.sh"
@@ -143,7 +160,7 @@ if ($sshExit -ne 0) {
 }
 
 # ---- 6. Verify from outside ------------------------------------------------------
-Step '6/7 Checking the live API'
+Step '6/8 Checking the live API'
 try {
   $health = Invoke-RestMethod -Uri "https://$Domain/api/health" -TimeoutSec 20 -ErrorAction Stop
 } catch { Fail "https://$Domain/api/health is not responding: $($_.Exception.Message)" }
@@ -159,9 +176,51 @@ if ($deployedLine -and $deployedLine -match '-> ([0-9a-f]{7,})') {
   }
 }
 
-# ---- 7. Android (optional) -----------------------------------------------------
+# ---- 7. Over-the-air update for the phone apps ---------------------------------
+$versionCode = [int](Select-String -Path 'androidppuild.gradle' -Pattern 'versionCode (\d+)').Matches[0].Groups[1].Value
+if ($ServerOnly -or $NoAppUpdate) {
+  Step '7/8 Phone app update skipped'
+} else {
+  Step "7/8 Publishing version $AppBuild to the installed phone apps"
+  $zipName = "bundle-$AppBuild.zip"
+  $zipPath = Join-Path $env:TEMP $zipName
+  $jsonPath = Join-Path $env:TEMP 'millmate-latest.json'
+  if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+  # Windows' tar.exe writes a proper zip (Compress-Archive in PowerShell 5.1 uses
+  # backslashes in paths, which Android can't unpack). index.html must be at the root.
+  $entries = @(Get-ChildItem -Name 'dist')
+  if ($entries -notcontains 'index.html') { Fail 'dist\index.html is missing - the build did not run.' }
+  Run 'zipping the app' { & "$env:SystemRoot\System32	ar.exe" -a -c -f $zipPath -C dist @entries }
+  $checksum = (Get-FileHash -Algorithm SHA256 $zipPath).Hash.ToLower()
+  $latest = @{ version = $AppBuild; file = $zipName; checksum = $checksum; minNativeBuild = $versionCode;
+               commit = $remoteCommit; published = (Get-Date).ToUniversalTime().ToString('o') } | ConvertTo-Json -Compress
+  # No byte-order mark: Node's JSON.parse rejects it.
+  [System.IO.File]::WriteAllText($jsonPath, $latest, (New-Object System.Text.UTF8Encoding($false)))
+
+  $scpArgs = @('-q', '-i', $SshKey, '-o', 'StrictHostKeyChecking=accept-new', $zipPath, $jsonPath, "${SshUser}@${Domain}:/tmp/")
+  Run 'uploading the app bundle' { & scp @scpArgs }
+  # latest.json is moved into place last, so phones never see it before the zip exists.
+  # Only the newest 5 bundles are kept.
+  $publish = "sudo install -d -o millmate -g millmate -m 755 $UpdatesDir" +
+    " && sudo install -o millmate -g millmate -m 644 /tmp/$zipName $UpdatesDir/$zipName" +
+    " && sudo install -o millmate -g millmate -m 644 /tmp/millmate-latest.json $UpdatesDir/latest.json.new" +
+    " && sudo mv -f $UpdatesDir/latest.json.new $UpdatesDir/latest.json" +
+    " && rm -f /tmp/$zipName /tmp/millmate-latest.json" +
+    " && (ls -1t $UpdatesDir/bundle-*.zip | tail -n +6 | xargs -r sudo rm -f)"
+  $pubArgs = @('-i', $SshKey, '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=20', "$SshUser@$Domain", $publish)
+  Run 'publishing the app bundle' { & ssh @pubArgs }
+  Remove-Item $zipPath, $jsonPath -Force -ErrorAction SilentlyContinue
+
+  try {
+    $live = Invoke-RestMethod -Uri "https://$Domain/api/app-update/latest" -TimeoutSec 20 -ErrorAction Stop
+  } catch { Fail "The update was uploaded but https://$Domain/api/app-update/latest does not answer: $($_.Exception.Message)" }
+  if ($live.version -ne $AppBuild) { Fail "The server reports version $($live.version) instead of $AppBuild." }
+  Ok "Phones running native build $versionCode or newer will switch to $AppBuild the next time they are reopened."
+}
+
+# ---- 8. Android (optional) -----------------------------------------------------
 if ($Android) {
-  Step '7/7 Building the signed Android release'
+  Step '8/8 Building the signed Android release'
   if ($ServerOnly) { Run 'npm run build' { npm run build --silent } }
   Run 'npx cap sync android' { npx cap sync android }
   Push-Location android
@@ -174,10 +233,11 @@ if ($Android) {
   Ok "MillMate-$version.aab (upload to Play Console) and MillMate-$version.apk (install for testing) are in $PSScriptRoot"
   Info 'Remember: raise versionCode/versionName in android/app/build.gradle before every new Play upload.'
 } else {
-  Step '7/7 Android build skipped (add -Android to build it)'
+  Step '8/8 Android build skipped (add -Android to build it)'
 }
 
 Write-Host ""
 Write-Host "DEPLOY COMPLETE - the API on $Domain is updated." -ForegroundColor Green
+if (-not ($ServerOnly -or $NoAppUpdate)) { Write-Host "Phone apps: version $AppBuild is published; installed apps pick it up on their next start." }
 Write-Host "Website: Vercel builds from Dhanuja's fork of the repo. Open that fork on GitHub and click"
 Write-Host "'Sync fork' so https://alagiri-mill.vercel.app picks up this version."

@@ -60,10 +60,14 @@ cd android
 
 Output: `android\app\build\outputs\bundle\release\app-release.aab` - upload this file to Play Console.
 
-(`android/gradle.properties` pins Java to `C:/Program Files/Android/Android Studio/jbr`, which only exists on machines with Android Studio installed; the `-Dorg.gradle.java.home` option above overrides it. Delete that line from `gradle.properties` if nobody needs it.)
+(`android/gradle.properties` pins Java to the Temurin JDK 21 in `C:/Program Files/Eclipse Adoptium/`.)
 
-### Every update
-Increase `versionCode` (a whole number, must go up every upload) and `versionName` in `android/app/build.gradle`, then repeat the build.
+Easier: `.\deploy.ps1 -Android` from the project root does all of this and puts `MillMate-<version>.aab/.apk` in the project folder.
+
+### Every update - usually no new APK needed
+Since 1.3 the app updates itself over the air. Every `.\deploy.ps1` uploads the new web build to the API server; installed apps download it in the background on start/resume and switch to it the next time they are reopened (`src/services/liveUpdate.js`, `server/routes/appUpdate.js`).
+
+A **new APK/IPA is only needed when native parts change**: a new or upgraded Capacitor plugin, permissions, app icon, splash, or `capacitor.config.json`. Then increase `versionCode` (a whole number, must go up every upload) and `versionName` in `android/app/build.gradle`, set the iOS build number to the same `versionCode`, and run `.\deploy.ps1 -Android`. Each OTA bundle records the `versionCode` it was built with, and phones on an older native build ignore it until they install the new app, so they never get code their native shell can't run.
 
 ### BACK UP THE SIGNING KEY NOW
 Copy `android\keystore\alagiri-release.jks` **and** `android\keystore.properties` to a password manager or secure cloud storage, off this PC. If they are lost you can never publish an update under the same app. Also enrol in **Play App Signing** when you create the app: Google then holds the real signing key and yours becomes a replaceable upload key.

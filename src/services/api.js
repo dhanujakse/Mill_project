@@ -43,7 +43,7 @@ let fileStorageMode = null; // 's3' | 'inline', asked from the server once per p
 // Runtime-overridable (via Settings / localStorage) so a packaged mobile
 // build can point at a different backend without a rebuild; falls back to a
 // build-time env var, then to same-origin /api for a standard web deploy.
-const getApiBaseUrl = () => {
+export const getApiBaseUrl = () => {
   const override = localStorage.getItem('pms_api_base_url');
   if (override) return override.replace(/\/$/, '');
   return (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
