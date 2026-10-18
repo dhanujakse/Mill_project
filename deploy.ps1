@@ -177,7 +177,9 @@ if ($deployedLine -and $deployedLine -match '-> ([0-9a-f]{7,})') {
 }
 
 # ---- 7. Over-the-air update for the phone apps ---------------------------------
-$versionCode = [int](Select-String -Path 'androidppuild.gradle' -Pattern 'versionCode (\d+)').Matches[0].Groups[1].Value
+$versionMatch = Select-String -Path 'android\app\build.gradle' -Pattern 'versionCode (\d+)'
+if (-not $versionMatch) { Fail 'Could not read versionCode from android\app\build.gradle.' }
+$versionCode = [int]$versionMatch.Matches[0].Groups[1].Value
 if ($ServerOnly -or $NoAppUpdate) {
   Step '7/8 Phone app update skipped'
 } else {
@@ -190,7 +192,8 @@ if ($ServerOnly -or $NoAppUpdate) {
   # backslashes in paths, which Android can't unpack). index.html must be at the root.
   $entries = @(Get-ChildItem -Name 'dist')
   if ($entries -notcontains 'index.html') { Fail 'dist\index.html is missing - the build did not run.' }
-  Run 'zipping the app' { & "$env:SystemRoot\System32	ar.exe" -a -c -f $zipPath -C dist @entries }
+  Run 'zipping the app' { & "$env:SystemRoot\System32\tar.exe" -a -c -f $zipPath -C dist @entries }
+  if (-not (Test-Path $zipPath)) { Fail 'Zipping the app did not produce a file.' }
   $checksum = (Get-FileHash -Algorithm SHA256 $zipPath).Hash.ToLower()
   $latest = @{ version = $AppBuild; file = $zipName; checksum = $checksum; minNativeBuild = $versionCode;
                commit = $remoteCommit; published = (Get-Date).ToUniversalTime().ToString('o') } | ConvertTo-Json -Compress
