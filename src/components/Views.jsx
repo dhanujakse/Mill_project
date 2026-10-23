@@ -2734,9 +2734,6 @@ ${formattedDueDate ? `*Due Date:* ${formattedDueDate}\n-------------------------
     addNotification("Order Placed", `Order ${requestId} status is now No Response (Awaiting Supplier Acknowledgment)`, "Both");
     state.triggerWebhook("status.changed", saved);
 
-    // Initial WhatsApp Simulator thread
-    state.initWhatsAppThread(requestId, formattedMsg);
-
     window.open(url, '_blank');
     navigateTo('#live-orders');
   };
@@ -3321,7 +3318,8 @@ export function LiveOrdersView({ state, navigateTo, goBack }) {
                         {req.supplierAsk.stage === 'awaiting_availability' && 'WhatsApp sent — awaiting supplier reply'}
                         {req.supplierAsk.stage === 'awaiting_date' && 'Supplier confirmed available — awaiting date'}
                         {req.supplierAsk.stage === 'replied' && req.supplierAsk.availability === 'unavailable' && 'Supplier said not available'}
-                        {req.supplierAsk.stage === 'replied' && req.supplierAsk.availability === 'available' && `Supplier reply: "${req.supplierAsk.rawDateReply}"`}
+                        {req.supplierAsk.stage === 'replied' && req.supplierAsk.confirmedDate && `Available — delivery ${new Date(req.supplierAsk.confirmedDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
+                        {req.supplierAsk.stage === 'replied' && req.supplierAsk.needsReview && `Check supplier reply: "${req.supplierAsk.lastReply || req.supplierAsk.rawDateReply || ''}"`}
                       </span>
                     )}
                   </div>
@@ -3349,6 +3347,20 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
   const [proofFile, setProofFile] = useState(null);
   const [proofFileName, setProofFileName] = useState("");
   const [askingSupplier, setAskingSupplier] = useState(false);
+  // WhatsApp: whether the server has Meta set up, and this order's supplier chat.
+  const [waConfigured, setWaConfigured] = useState(true);
+  const [waMessages, setWaMessages] = useState([]);
+  const [showWaChat, setShowWaChat] = useState(false);
+  useEffect(() => {
+    if (!req?.id) return;
+    let cancelled = false;
+    apiService.getWhatsAppStatus().then(s => { if (!cancelled) setWaConfigured(!!s.configured); }).catch(() => {});
+    if (req.supplierAsk) {
+      apiService.getSupplierMessages(req.id).then(m => { if (!cancelled) setWaMessages(m); }).catch(() => {});
+    }
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [req?.id, req?.supplierAsk?.sentAt, req?.supplierAsk?.lastReplyAt]);
 
   // Hooks must run unconditionally on every render (Rules of Hooks). Declaring
   // this useEffect after the early "not found" / "Pending" returns below caused
@@ -4182,7 +4194,7 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
           </div>
         )}
 
-        {req.status === "No Response" && (
+        {(req.status === "No Response" || req.supplierAsk) && req.status !== "Received" && req.status !== "Rejected" && (
           <div style={{
             background: 'var(--card-bg)',
             border: '1px solid var(--border-color)',
@@ -4192,43 +4204,90 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
             boxShadow: 'var(--shadow-sm)'
           }}>
             <div style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.8px', marginBottom: '10px' }}>
-              Supplier Availability
+              Supplier on WhatsApp
             </div>
             {!req.supplierAsk ? (
               hasEditPermission ? (
-                <button
-                  onClick={handleAskSupplier}
-                  disabled={askingSupplier}
-                  className="btn-orange"
-                  style={{ width: 'auto', padding: '10px 16px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', cursor: askingSupplier ? 'default' : 'pointer', opacity: askingSupplier ? 0.7 : 1 }}
-                >
-                  <Icons.WhatsApp size={16} />
-                  {askingSupplier ? 'Sending...' : 'Ask Supplier on WhatsApp'}
-                </button>
+                waConfigured ? (
+                  <button
+                    onClick={handleAskSupplier}
+                    disabled={askingSupplier}
+                    className="btn-orange"
+                    style={{ width: 'auto', padding: '10px 16px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', cursor: askingSupplier ? 'default' : 'pointer', opacity: askingSupplier ? 0.7 : 1 }}
+                  >
+                    <Icons.WhatsApp size={16} />
+                    {askingSupplier ? 'Sending...' : 'Ask Supplier: Available? Date?'}
+                  </button>
+                ) : (
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>WhatsApp is not set up on the server yet, so suppliers can't be asked automatically.</p>
+                )
               ) : (
                 <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No WhatsApp availability request sent yet.</p>
               )
             ) : (
               <div>
                 <p style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' }}>
-                  {req.supplierAsk.stage === 'awaiting_availability' && `Sent ${new Date(req.supplierAsk.sentAt).toLocaleString()} — awaiting supplier reply.`}
-                  {req.supplierAsk.stage === 'awaiting_date' && 'Supplier confirmed the material is available — awaiting a delivery date.'}
+                  {req.supplierAsk.stage === 'awaiting_availability' && `Asked ${new Date(req.supplierAsk.sentAt).toLocaleString()} — waiting for the supplier's reply.`}
+                  {req.supplierAsk.stage === 'awaiting_date' && 'Supplier confirmed the material is available — waiting for a delivery date.'}
                   {req.supplierAsk.stage === 'replied' && req.supplierAsk.availability === 'unavailable' && 'Supplier said the material is not available.'}
-                  {req.supplierAsk.stage === 'replied' && req.supplierAsk.availability === 'available' && 'Supplier confirmed availability and proposed a date:'}
+                  {req.supplierAsk.stage === 'replied' && req.supplierAsk.confirmedDate && `Available. Delivery date set to ${new Date(req.supplierAsk.confirmedDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} from the supplier's reply.`}
+                  {req.supplierAsk.stage === 'replied' && req.supplierAsk.needsReview && 'Couldn\'t read the supplier\'s reply automatically — please check it and set the date.'}
                 </p>
-                {req.supplierAsk.rawDateReply && (
+                {req.supplierAsk.reminderSentAt && req.supplierAsk.stage === 'awaiting_availability' && (
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Reminder sent {new Date(req.supplierAsk.reminderSentAt).toLocaleString()}.</p>
+                )}
+                {req.supplierAsk.lastReply && (
                   <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                    "{req.supplierAsk.rawDateReply}" &mdash; confirm the actual PO date yourself before booking.
+                    Last reply: "{req.supplierAsk.lastReply}"
                   </p>
                 )}
-                {hasEditPermission && req.supplierAsk.stage !== 'awaiting_availability' && (
-                  <button
-                    onClick={handleAskSupplier}
-                    disabled={askingSupplier}
-                    style={{ marginTop: '10px', background: 'none', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '6px 12px', fontSize: '11px', fontWeight: '800', cursor: askingSupplier ? 'default' : 'pointer', color: 'var(--text-main)' }}
-                  >
-                    {askingSupplier ? 'Sending...' : 'Ask Again'}
-                  </button>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
+                  {hasEditPermission && req.supplierAsk.needsReview && (
+                    <button
+                      onClick={handleEditDispatchDate}
+                      className="btn-orange"
+                      style={{ width: 'auto', padding: '6px 12px', fontSize: '11px', marginBottom: 0, cursor: 'pointer' }}
+                    >
+                      Set Delivery Date
+                    </button>
+                  )}
+                  {hasEditPermission && waConfigured && req.supplierAsk.stage !== 'awaiting_availability' && (
+                    <button
+                      onClick={handleAskSupplier}
+                      disabled={askingSupplier}
+                      style={{ background: 'none', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '6px 12px', fontSize: '11px', fontWeight: '800', fontFamily: 'inherit', cursor: askingSupplier ? 'default' : 'pointer', color: 'var(--text-main)' }}
+                    >
+                      {askingSupplier ? 'Sending...' : 'Ask Again'}
+                    </button>
+                  )}
+                  {waMessages.length > 0 && (
+                    <button
+                      onClick={() => setShowWaChat(v => !v)}
+                      style={{ background: 'none', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '6px 12px', fontSize: '11px', fontWeight: '800', fontFamily: 'inherit', cursor: 'pointer', color: 'var(--text-main)' }}
+                    >
+                      {showWaChat ? 'Hide Messages' : `Show Messages (${waMessages.length})`}
+                    </button>
+                  )}
+                </div>
+                {showWaChat && (
+                  <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {waMessages.map((m, idx) => (
+                      <div key={idx} style={{
+                        alignSelf: m.direction === 'outbound' ? 'flex-end' : 'flex-start',
+                        maxWidth: '85%',
+                        background: m.direction === 'outbound' ? '#dcf8c6' : '#f3f4f6',
+                        borderRadius: '10px',
+                        padding: '8px 10px',
+                        fontSize: '12px',
+                        color: 'var(--text-main)'
+                      }}>
+                        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.body}</div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px', textAlign: 'right' }}>
+                          {m.direction === 'outbound' ? 'Mill Mate' : 'Supplier'} · {new Date(m.at).toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             )}

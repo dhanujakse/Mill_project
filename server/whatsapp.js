@@ -10,10 +10,30 @@ const {
   META_WEBHOOK_VERIFY_TOKEN,
   META_APP_SECRET,
   META_AVAILABILITY_TEMPLATE_NAME,
-  META_TEMPLATE_LANGUAGE
+  META_TEMPLATE_LANGUAGE,
+  META_AVAILABILITY_TEMPLATE_BUTTONS,
+  META_GRAPH_BASE_URL
 } = process.env;
 
 const GRAPH_API_VERSION = 'v21.0';
+// Overridable only so tests can point at a local fake of the Graph API.
+const GRAPH_BASE = (META_GRAPH_BASE_URL || 'https://graph.facebook.com').replace(/\/$/, '');
+// The approved template has two quick-reply buttons ("Available", "Not available")
+// unless this is set to "false".
+const TEMPLATE_HAS_BUTTONS = String(META_AVAILABILITY_TEMPLATE_BUTTONS || 'true').toLowerCase() !== 'false';
+
+export const whatsappConfigured = () => !!(META_ACCESS_TOKEN && META_PHONE_NUMBER_ID && META_AVAILABILITY_TEMPLATE_NAME);
+
+// Quick-reply button payloads carry the request id, so a button tap is matched
+// to the exact order even when one supplier has several open questions.
+export const AVAILABLE_PAYLOAD = 'avail:yes:';
+export const UNAVAILABLE_PAYLOAD = 'avail:no:';
+
+// Meta rejects template parameters with newlines, tabs or 4+ spaces in a row.
+const templateText = (value, maxLength) => {
+  const text = String(value ?? '').replace(/[\r\n\t]+/g, ' ').replace(/ {4,}/g, ' ').trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+};
 
 // Normalizes a stored phone number (bare 10-digit Indian, or already E.164)
 // into E.164, e.g. "9876543210" -> "+919876543210".
@@ -37,7 +57,7 @@ const callGraphApi = async (payload) => {
   if (!META_ACCESS_TOKEN) throw new Error('META_ACCESS_TOKEN is not set in server/.env.');
   if (!META_PHONE_NUMBER_ID) throw new Error('META_PHONE_NUMBER_ID is not set in server/.env.');
 
-  const res = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${META_PHONE_NUMBER_ID}/messages`, {
+  const res = await fetch(`${GRAPH_BASE}/${GRAPH_API_VERSION}/${META_PHONE_NUMBER_ID}/messages`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${META_ACCESS_TOKEN}`,
@@ -53,29 +73,39 @@ const callGraphApi = async (payload) => {
   return json;
 };
 
-export const sendAvailabilityRequest = async ({ requestId, toNumber, productName, qty, units }) => {
+// Template body (as submitted to Meta):
+//   Hello, this is Alagiri Duplex Paper Mills. Is {{1}} available for our order {{2}}? Please tap a button below.
+// {{1}} lists every item with its quantity, {{2}} is the PO number.
+export const sendAvailabilityRequest = async ({ requestId, toNumber, itemsText, poNumber }) => {
   if (!META_AVAILABILITY_TEMPLATE_NAME) throw new Error('META_AVAILABILITY_TEMPLATE_NAME is not set in server/.env.');
 
   const to = toE164(toNumber);
+  const components = [{
+    type: 'body',
+    parameters: [
+      { type: 'text', text: templateText(itemsText, 600) || 'the requested items' },
+      { type: 'text', text: templateText(poNumber, 60) || requestId }
+    ]
+  }];
+  if (TEMPLATE_HAS_BUTTONS) {
+    components.push(
+      { type: 'button', sub_type: 'quick_reply', index: '0', parameters: [{ type: 'payload', payload: `${AVAILABLE_PAYLOAD}${requestId}` }] },
+      { type: 'button', sub_type: 'quick_reply', index: '1', parameters: [{ type: 'payload', payload: `${UNAVAILABLE_PAYLOAD}${requestId}` }] }
+    );
+  }
   const json = await callGraphApi({
     to: to.replace('+', ''),
     type: 'template',
     template: {
       name: META_AVAILABILITY_TEMPLATE_NAME,
       language: { code: META_TEMPLATE_LANGUAGE || 'en_US' },
-      components: [{
-        type: 'body',
-        parameters: [
-          { type: 'text', text: productName || 'the requested item' },
-          { type: 'text', text: `${qty ?? ''} ${units ?? ''}`.trim() || 'the requested quantity' }
-        ]
-      }]
+      components
     }
   });
   const messageId = json?.messages?.[0]?.id;
   logMessage({
     requestId, direction: 'outbound', toNumber: to, fromNumber: META_PHONE_NUMBER_ID,
-    providerMessageId: messageId, status: 'sent', body: `[availability template] ${productName} x ${qty} ${units}`
+    providerMessageId: messageId, status: 'sent', body: `Is ${templateText(itemsText, 600)} available for our order ${poNumber}?`
   });
   return { sid: messageId, to };
 };

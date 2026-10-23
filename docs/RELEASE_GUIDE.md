@@ -92,12 +92,12 @@ Copy `android\keystore\alagiri-release.jks` **and** `android\keystore.properties
 
 ### Steps on the Mac
 ```bash
-git clone https://github.com/ramya25-star/Mill_project.git && cd Mill_project
-npm install
-npm run build                 # production API URL comes from .env.production
-npx cap sync ios
-npx cap open ios              # opens Xcode
+git clone https://github.com/ramya25-star/Mill_project.git && cd Mill_project   # first time only
+bash ios-mac.sh               # pulls, installs, builds, syncs iOS and opens Xcode
 ```
+Always run `npx cap sync ios` on the Mac (the script does): syncing iOS on Windows writes Windows-style paths into `ios/App/CapApp-SPM/Package.swift`.
+
+No iPhone is needed: test in the Xcode Simulator, and install on the client's iPhone through **TestFlight** (App Store Connect > TestFlight > External Testing > add their email; the first build gets a short Beta App Review).
 In Xcode:
 1. Select the **App** target > **Signing & Capabilities**: choose your Team, keep "Automatically manage signing". Bundle identifier: `com.alagiri.procurement` (create the same ID in App Store Connect; it can't be changed after the first upload).
 2. Set **Version** (marketing, e.g. 1.0) and **Build** (whole number, must increase every upload).
@@ -107,6 +107,9 @@ In Xcode:
 
 ### Already prepared in the iOS project
 - Camera and photo library permission texts in `Info.plist` (Apple rejects apps that use the camera without them).
+- `ITSAppUsesNonExemptEncryption = false`, so uploads don't stop at the export-compliance question.
+- `ios/App/App/PrivacyInfo.xcprivacy`: Apple's privacy manifest (no tracking; declares the UserDefaults, file-timestamp and disk-space use of the over-the-air updater, which ships none).
+- Privacy policy page for both stores: **https://alagiri-mill.vercel.app/privacy.html** (`public/privacy.html`, draft for the client to approve).
 - Web assets and the production API URL are bundled by `cap sync`.
 
 ### App Store checklist

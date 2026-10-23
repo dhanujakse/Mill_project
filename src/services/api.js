@@ -157,6 +157,14 @@ export const apiService = {
     return apiFetch(`/whatsapp/ask/${encodeURIComponent(requestId)}`, { method: 'POST' });
   },
 
+  async getWhatsAppStatus() {
+    return apiFetch('/whatsapp/status');
+  },
+
+  async getSupplierMessages(requestId) {
+    return apiFetch(`/whatsapp/messages/${encodeURIComponent(requestId)}`);
+  },
+
   // ------------------------------------------------
   // FILE STORAGE (attachments, LR copies, proof of receipt)
   // ------------------------------------------------

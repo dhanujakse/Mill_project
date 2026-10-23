@@ -82,8 +82,6 @@ export default function App() {
   // Developer console state
   const [devConsoleOpen, setDevConsoleOpen] = useState(false);
 
-  // WhatsApp Simulator state
-  const [chatThread, setChatThread] = useState(null); // { requestId, messages: [], quickReplies: [] }
 
   // Clock
   const [clockTime, setClockTime] = useState("17:50");
@@ -685,81 +683,6 @@ export default function App() {
   };
 
   // ----------------------------------------------------
-  // INTERACTIVE WHATSAPP SUPPLIER BOT CHAT
-  // ----------------------------------------------------
-  const initWhatsAppThread = (requestId, outgoingText) => {
-    const req = requests.find(r => r.id === requestId);
-    const supplier = suppliers.find(s => s.id === req.supplierId) || {};
-
-    setChatThread({
-      requestId,
-      supplierName: supplier.companyName,
-      whatsappNumber: supplier.whatsappNumber,
-      messages: [
-        { sender: "system", text: `WhatsApp channel opened with ${supplier.companyName} (${supplier.whatsappNumber})` },
-        { sender: "admin", text: outgoingText }
-      ],
-      quickReplies: [
-        { text: "Accepted", reply: "Thank you for the PO. We have accepted the order and are processing it." },
-        { text: "Rejected", reply: "Apologies, we cannot fulfill this order at this moment. Order rejected." },
-        { text: "Dispatched", reply: "The material has been dispatched. Here is the LR Copy Link: https://api.alagiri.com/receipt/LR-4421.png" },
-        { text: "Delivered", reply: "Material delivered and handed over at site. Delivery confirmed." }
-      ]
-    });
-  };
-
-  const handleSupplierChatReply = async (status, text) => {
-    if (!chatThread) return;
-
-    // Add reply bubble to chat window
-    setChatThread(prev => ({
-      ...prev,
-      messages: [...prev.messages, { sender: "supplier", text }]
-    }));
-
-    let systemStatus = "";
-    let remarks = `Received WhatsApp response: ${status}. Text: "${text}"`;
-    let triggerEvent = "supplier.response";
-
-    if (status === "Accepted") systemStatus = "Acknowledged";
-    else if (status === "Rejected") systemStatus = "Rejected";
-    else if (status === "Dispatched") systemStatus = "Booked";
-    else if (status === "Delivered") systemStatus = "Received";
-    else systemStatus = "Pending";
-
-    const req = requests.find(r => r.id === chatThread.requestId);
-    const prevStatus = req.status;
-
-    let lrCopyData = null;
-    if (status === "Dispatched") {
-      lrCopyData = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><rect width='200' height='200' fill='%23cbd5e1'/><text x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='14' fill='%23334155'>Supplier Whatsapp Receipt</text></svg>";
-    }
-
-    const updatedHistory = [...req.history, {
-      status: systemStatus,
-      updatedBy: "System (WhatsApp)",
-      role: "Supplier",
-      timestamp: new Date().toISOString(),
-      remarks
-    }];
-
-    const updatedReq = {
-      ...req,
-      status: systemStatus,
-      lrCopy: lrCopyData || req.lrCopy,
-      history: updatedHistory
-    };
-
-    const saved = await apiService.updateRequest(chatThread.requestId, updatedReq);
-    setRequests(requests.map(r => r.id === chatThread.requestId ? saved : r));
-
-    logEvent("Supplier Response", prevStatus, systemStatus, `Supplier WhatsApp reply "${status}": ${text}`);
-    addNotification("Supplier Response Received", `Supplier ${chatThread.supplierName || 'AB Company'} updated ${chatThread.requestId} status to ${systemStatus}.`, "Both");
-
-    triggerWebhook(triggerEvent, saved);
-  };
-
-  // ----------------------------------------------------
   // VIEW ROUTER SWITCH
   // ----------------------------------------------------
   const renderActiveView = () => {
@@ -791,7 +714,6 @@ export default function App() {
         users: CONFIG.users,
         logEvent,
         triggerWebhook,
-        initWhatsAppThread,
         currentUser,
         setCurrentUser,
         showToast,
