@@ -942,9 +942,20 @@ export default function App() {
             <div
               className={`pull-refresh-indicator ${refreshing ? 'spinning' : ''} ${pullDistance >= PULL_TRIGGER_PX ? 'ready' : ''}`}
               style={{ transform: `translate(-50%, ${refreshing ? 40 : pullDistance - 20}px)` }}
+              role="status"
               aria-label={refreshing ? 'Refreshing' : 'Pull to refresh'}
             >
-              ↻
+              {/* Ring fills as you pull; once refreshing, a short arc spins. */}
+              <svg className="pull-refresh-ring" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" fill="none" stroke="var(--border-color, #e5e7eb)" strokeWidth="2.5" />
+                <circle
+                  cx="12" cy="12" r="9" fill="none"
+                  stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+                  strokeDasharray="56.55"
+                  strokeDashoffset={refreshing ? 40 : 56.55 * (1 - Math.min(pullDistance / PULL_TRIGGER_PX, 1))}
+                  transform="rotate(-90 12 12)"
+                />
+              </svg>
             </div>
           )}
 

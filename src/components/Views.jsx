@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { apiService, isStoredFile, cacheCurrentUser } from '../services/api';
 import { CONFIG, COMPANY_ADDRESSES, COMPANY_OPTIONS, BILL_TO_OPTIONS, getShipToOptions, getCompanyAddress } from '../config';
 
@@ -2692,49 +2693,83 @@ export function PoPreviewView({ state, navigateTo, goBack, requestId, addNotific
   const formattedDueDate = formatDueDate(req.dueDate);
   const isUrgent = (req.priority || "").trim().toLowerCase() === "urgent";
 
-  const itemsSummaryText = items.map((it, idx) => 
-    `*Item ${idx + 1}:* ${it.productName}\n*Description:*\n${normalizeMultiline(it.description) || "N/A"}\n*Quantity:* ${it.qty} ${it.units}`
-  ).join('\n----------------------------------------\n');
 
-  const formattedMsg = `*PURCHASE ORDER: ${req.poNumber}*
-PO Date: ${new Date(req.poDate).toLocaleDateString('en-GB')}${formattedDueDate ? `\nDue Date: ${formattedDueDate}` : ""}
+  // Short caption that goes with the PDF (the full PO is in the file).
+  const shareCaption = `Purchase Order ${req.poNumber}${formattedDueDate ? ` - book on or before ${formattedDueDate}` : ""}${isUrgent ? " (URGENT)" : ""}. Please acknowledge receipt and upload the LR copy once shipped.`;
 
-*BILL TO:*
-${billToLines.join('\n')}
+  const makePoPdf = async () => {
+    const { buildPoPdf } = await import('../services/poPdf');
+    const doc = buildPoPdf({
+      poNumber: req.poNumber,
+      poDate: new Date(req.poDate).toLocaleDateString('en-GB'),
+      dueDate: formattedDueDate,
+      billTo: billToLines.length ? billToLines : [req.billTo || "ALAGIRI PAPER MILLS"],
+      shipTo: shipToLines.length ? shipToLines : [req.shipTo || req.billTo || "ALAGIRI PAPER MILLS"],
+      supplier: [
+        supplier.companyName || "N/A",
+        supplier.address,
+        supplier.contactPerson && `Contact: ${supplier.contactPerson}`,
+        supplierPhone && `Ph: ${supplierPhone}`
+      ].filter(Boolean),
+      transportMode: req.transportMode,
+      urgent: isUrgent,
+      items: items.map(it => ({ ...it, description: normalizeMultiline(it.description) })),
+      signatory: CONFIG.users.admin.name
+    });
+    const fileName = `PO-${String(req.poNumber || requestId).replace(/[^\w.-]+/g, '_')}.pdf`;
+    return { doc, fileName };
+  };
 
-*SHIP TO:*
-${shipToLines.join('\n')}
+  const handleDownloadPdf = async () => {
+    try {
+      const { doc, fileName } = await makePoPdf();
+      if (Capacitor.isNativePlatform()) {
+        // The in-app browser can't save files; the share sheet offers "Save to Files/Drive".
+        const { sharePoPdf } = await import('../services/poPdf');
+        await sharePoPdf(doc, { fileName, text: shareCaption, phone: supplierPhone });
+      } else {
+        doc.save(fileName);
+      }
+    } catch (err) {
+      state.showToast("Could Not Create PDF", err.message || "Please try again.", "success");
+    }
+  };
 
-*SUPPLIER:*
-${supplier.companyName || "N/A"}
-${supplier.address || ""}
-Ph: ${supplierPhone}
-${req.transportMode ? `\n*MODE OF TRANSPORT:* ${req.transportMode}` : ""}${isUrgent ? `\n\n*URGENT ORDER*` : ""}${formattedDueDate ? `\n*BOOK ON OR BEFORE ${formattedDueDate}*` : ""}
-----------------------------------------
-${itemsSummaryText}
-----------------------------------------
-${formattedDueDate ? `*Due Date:* ${formattedDueDate}\n----------------------------------------\n` : ""}*Instructions:* Please acknowledge receipt of this PO. Upload LR Copy once shipment is sent.`;
+  const handleShareWhatsApp = async (e) => {
+    const btn = e?.currentTarget;
+    if (btn) btn.disabled = true;
+    let result;
+    try {
+      const { doc, fileName } = await makePoPdf();
+      const { sharePoPdf } = await import('../services/poPdf');
+      result = await sharePoPdf(doc, { fileName, text: shareCaption, phone: supplierPhone });
+    } catch (err) {
+      if (btn) btn.disabled = false;
+      state.showToast("Could Not Share PO", err.message || "Please try again.", "success");
+      return;
+    }
+    if (btn) btn.disabled = false;
+    if (result === 'cancelled') return; // nothing was sent, so keep the order as it is
+    if (result === 'downloaded') {
+      state.showToast("PO PDF Downloaded", "Attach the downloaded PDF in the WhatsApp chat that just opened.", "success");
+    }
 
-  const handleShareWhatsApp = async () => {
-    const url = `https://api.whatsapp.com/send?phone=${supplierPhone}&text=${encodeURIComponent(formattedMsg)}`;
-    
     // Set status to No Response (Order Placed)
     const updatedHistory = [...req.history, {
       status: "No Response",
       updatedBy: state.currentUser.name,
       role: state.currentUser.role || "Admin",
       timestamp: new Date().toISOString(),
-      remarks: "PO dispatched to WhatsApp."
+      remarks: "PO PDF shared via WhatsApp."
     }];
     const updatedReq = { ...req, status: "No Response", history: updatedHistory };
     const saved = await apiService.updateRequest(requestId, updatedReq);
     state.setRequests(state.requests.map(r => r.id === requestId ? saved : r));
 
-    state.logEvent("WhatsApp Message Sent", "No Response", "No Response", `Sent PO via WhatsApp to ${supplier.companyName || "supplier"}`);
+    state.logEvent("WhatsApp Message Sent", "No Response", "No Response", `Sent PO PDF via WhatsApp to ${supplier.companyName || "supplier"}`);
     addNotification("Order Placed", `Order ${requestId} status is now No Response (Awaiting Supplier Acknowledgment)`, "Both");
     state.triggerWebhook("status.changed", saved);
 
-    window.open(url, '_blank');
     navigateTo('#live-orders');
   };
 
@@ -2909,8 +2944,11 @@ ${formattedDueDate ? `*Due Date:* ${formattedDueDate}\n-------------------------
           </div>
         </div>
 
-        <button className="btn-orange" onClick={handleShareWhatsApp} style={{ marginTop: '20px', marginBottom: '20px', width: '100%', cursor: 'pointer' }}>
-          Share via WhatsApp
+        <button className="btn-orange" onClick={handleShareWhatsApp} style={{ marginTop: '20px', marginBottom: '10px', width: '100%', cursor: 'pointer' }}>
+          Share PO PDF via WhatsApp
+        </button>
+        <button className="btn-outline" onClick={handleDownloadPdf} style={{ marginBottom: '20px', width: '100%', cursor: 'pointer' }}>
+          Download PDF
         </button>
       </div>
     </div>
