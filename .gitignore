@@ -18,9 +18,12 @@ dist-ssr
 # Backend server
 server/.env
 server/data/*.db
+server/data/*.db*bak*
+server/data/*.bak*
 server/data/*.db-journal
 server/data/*.db-wal
 server/data/*.db-shm
+server/data/uploads/
 
 # Editor directories and files
 .vscode/*
@@ -32,3 +35,7 @@ server/data/*.db-shm
 *.njsproj
 *.sln
 *.sw?
+
+# Secret env files kept outside git
+env2
+*.env.local

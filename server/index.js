@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './loadEnv.js';
 import express from 'express';
 import cors from 'cors';
 import authRoutes from './routes/auth.js';
@@ -13,6 +13,11 @@ import whatsappRoutes from './routes/whatsapp.js';
 import fileRoutes from './routes/files.js';
 import appUpdateRoutes from './routes/appUpdate.js';
 import { s3Enabled, getBucket } from './storage.js';
+import { validateTemplateConfig } from './whatsapp.js';
+import { startMorningJobScheduler } from './jobs/morning.js';
+
+// Perform WhatsApp template configuration startup validation
+validateTemplateConfig();
 
 const app = express();
 // Caddy (AWS) or the PaaS edge terminates TLS in front of the API, so
@@ -61,7 +66,12 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`Alagiri backend listening on http://localhost:${PORT}`);
+export const server = app.listen(PORT, () => {
+  console.log(`Mill Mate backend listening on http://localhost:${PORT}`);
   console.log(s3Enabled ? `File storage: S3 bucket "${getBucket()}"` : 'File storage: inline in the database (set S3_BUCKET to use S3)');
+
+  // Start morning automation scheduler (single instance)
+  startMorningJobScheduler();
 });
+
+export default app;

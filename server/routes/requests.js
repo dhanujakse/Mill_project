@@ -21,6 +21,25 @@ router.post('/', (req, res) => {
   }
   db.prepare('INSERT INTO requests (id, status, data) VALUES (?, ?, ?)')
     .run(requestData.id, requestData.status || null, JSON.stringify(requestData));
+
+  // Notify all team members when a new order request arrives
+  try {
+    const notifId = `notif-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const itemDesc = requestData.productName || (Array.isArray(requestData.items) && requestData.items[0]?.productName) || 'items';
+    db.prepare('INSERT INTO notifications (id, role, read, data) VALUES (?, ?, 0, ?)')
+      .run(notifId, 'Both', JSON.stringify({
+        id: notifId,
+        role: 'Both',
+        title: 'New Order Request',
+        body: `New order request ${requestData.id} (${itemDesc}) submitted.`,
+        requestId: requestData.id,
+        timestamp: new Date().toISOString(),
+        read: false
+      }));
+  } catch (err) {
+    console.error('[requests] Failed to notify members for new order request:', err?.message || err);
+  }
+
   res.status(201).json(requestData);
 });
 

@@ -59,6 +59,7 @@ router.post('/', requireRole('Main Admin'), asyncHandler(async (req, res) => {
     VALUES (?, ?, ?, ?, 1, 1, ?)
   `).run(id, username, passwordHash, body.role, JSON.stringify({
     name, email, phone, department: body.department,
+    whatsappAlerts: body.whatsappAlerts !== undefined ? Boolean(body.whatsappAlerts) : true,
     permissions: body.role === 'Sub Admin' ? (body.permissions || {}) : {}
   }));
 
@@ -157,6 +158,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
     avatar: body.avatar !== undefined ? body.avatar : (currentProfile.avatar || ''),
     profileColor: chosenColor,
     avatarColor: chosenColor,
+    whatsappAlerts: body.whatsappAlerts !== undefined ? Boolean(body.whatsappAlerts) : (currentProfile.whatsappAlerts !== undefined ? currentProfile.whatsappAlerts : true),
     permissions: (isAdmin && body.role !== undefined)
       ? (body.role === 'Sub Admin' ? (body.permissions || currentProfile.permissions || {}) : {})
       : currentProfile.permissions

@@ -151,10 +151,18 @@ export const apiService = {
   },
 
   // ------------------------------------------------
-  // WHATSAPP - SUPPLIER AVAILABILITY REQUESTS
+  // WHATSAPP API
   // ------------------------------------------------
   async askSupplierAvailability(requestId) {
-    return apiFetch(`/whatsapp/ask/${encodeURIComponent(requestId)}`, { method: 'POST' });
+    return apiFetch('/whatsapp/ask/' + encodeURIComponent(requestId), { method: 'POST' });
+  },
+
+  async sendPOWhatsApp(orderId) {
+    return apiFetch('/whatsapp/po/' + encodeURIComponent(orderId) + '/send', { method: 'POST' });
+  },
+
+  async getWhatsAppMessages(orderId) {
+    return apiFetch('/whatsapp/messages/' + encodeURIComponent(orderId));
   },
 
   async getWhatsAppStatus() {

@@ -2699,23 +2699,8 @@ export function PoPreviewView({ state, navigateTo, goBack, requestId, addNotific
 
   const makePoPdf = async () => {
     const { buildPoPdf } = await import('../services/poPdf');
-    const doc = buildPoPdf({
-      poNumber: req.poNumber,
-      poDate: new Date(req.poDate).toLocaleDateString('en-GB'),
-      dueDate: formattedDueDate,
-      billTo: billToLines.length ? billToLines : [req.billTo || "ALAGIRI PAPER MILLS"],
-      shipTo: shipToLines.length ? shipToLines : [req.shipTo || req.billTo || "ALAGIRI PAPER MILLS"],
-      supplier: [
-        supplier.companyName || "N/A",
-        supplier.address,
-        supplier.contactPerson && `Contact: ${supplier.contactPerson}`,
-        supplierPhone && `Ph: ${supplierPhone}`
-      ].filter(Boolean),
-      transportMode: req.transportMode,
-      urgent: isUrgent,
-      items: items.map(it => ({ ...it, description: normalizeMultiline(it.description) })),
-      signatory: CONFIG.users.admin.name
-    });
+    const { poDataFromOrder } = await import('../../shared/poData.js');
+    const doc = buildPoPdf(poDataFromOrder(req, supplier, CONFIG.users.admin.name));
     const fileName = `PO-${String(req.poNumber || requestId).replace(/[^\w.-]+/g, '_')}.pdf`;
     return { doc, fileName };
   };
@@ -2944,12 +2929,47 @@ export function PoPreviewView({ state, navigateTo, goBack, requestId, addNotific
           </div>
         </div>
 
-        <button className="btn-orange" onClick={handleShareWhatsApp} style={{ marginTop: '20px', marginBottom: '10px', width: '100%', cursor: 'pointer' }}>
-          Share PO PDF via WhatsApp
-        </button>
-        <button className="btn-outline" onClick={handleDownloadPdf} style={{ marginBottom: '20px', width: '100%', cursor: 'pointer' }}>
-          Download PDF
-        </button>
+        <div style={{ marginTop: '20px', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <button
+            className="btn-orange"
+            onClick={async () => {
+              state.showToast("Sending...", "Sending PO to supplier on WhatsApp...", "success");
+              try {
+                const res = await apiService.sendPOWhatsApp(req.id);
+                state.showToast("PO Sent", "Official PO sent to supplier on WhatsApp.", "success");
+                addNotification("PO Dispatched", "Official PO dispatched via WhatsApp to " + (supplier.companyName || "supplier"), "Both");
+                const updated = state.requests.map(r => r.id === req.id ? { ...r, status: "No Response", po_wamid: res?.wamid, po_sent_at: new Date().toISOString() } : r);
+                state.setRequests(updated);
+                navigateTo('#live-orders');
+              } catch (err) {
+                state.showToast("WhatsApp Error", err?.message || "Failed to send PO via WhatsApp Cloud API.", "success");
+              }
+            }}
+            style={{
+              width: '100%',
+              backgroundColor: '#25D366',
+              color: '#ffffff',
+              border: 'none',
+              padding: '12px 18px',
+              borderRadius: '8px',
+              fontWeight: '800',
+              fontSize: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            <Icons.WhatsApp size={18} /> Send PO on WhatsApp
+          </button>
+          <button className="btn-outline" onClick={handleShareWhatsApp} style={{ width: '100%', cursor: 'pointer' }}>
+            Share PO PDF manually (pick the WhatsApp chat)
+          </button>
+          <button className="btn-outline" onClick={handleDownloadPdf} style={{ width: '100%', cursor: 'pointer' }}>
+            Download PDF
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -3336,36 +3356,51 @@ export function LiveOrdersView({ state, navigateTo, goBack }) {
                   Product name - <b>{req.productName}</b> ({req.qty} {req.units})
                 </div>
 
-                {req.status === "No Response" && (
-                  <div className="card-product-line" style={{ display: 'flex', alignItems: 'center' }}>
-                    {!req.supplierAsk ? (
-                      <button
-                        onClick={(e) => handleAskSupplier(e, req)}
-                        disabled={askingId === req.id}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', background: '#e9f9ee', color: '#1f9d55',
-                          border: '1px solid #bfe8cd', borderRadius: '8px', padding: '4px 10px', fontSize: '11px',
-                          fontWeight: '800', cursor: askingId === req.id ? 'default' : 'pointer', opacity: askingId === req.id ? 0.6 : 1
-                        }}
-                      >
-                        <Icons.WhatsApp size={13} />
-                        {askingId === req.id ? 'Sending...' : 'Ask Supplier'}
-                      </button>
-                    ) : (
-                      <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)' }}>
-                        {req.supplierAsk.stage === 'awaiting_availability' && 'WhatsApp sent — awaiting supplier reply'}
-                        {req.supplierAsk.stage === 'awaiting_date' && 'Supplier confirmed available — awaiting date'}
-                        {req.supplierAsk.stage === 'replied' && req.supplierAsk.availability === 'unavailable' && 'Supplier said not available'}
-                        {req.supplierAsk.stage === 'replied' && req.supplierAsk.confirmedDate && `Available — delivery ${new Date(req.supplierAsk.confirmedDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
-                        {req.supplierAsk.stage === 'replied' && req.supplierAsk.needsReview && `Check supplier reply: "${req.supplierAsk.lastReply || req.supplierAsk.rawDateReply || ''}"`}
-                      </span>
-                    )}
-                  </div>
-                )}
+                {/* Supplier availability request dormant */ null}
 
                 <div className="card-status-line">
                   <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: '800' }}>PO: {displayPoNumber}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    {(req.needs_call === 1 || req.needs_call === '1') && (
+                      <span style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #f87171', padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: '800' }}>
+                        📞 Call Supplier
+                      </span>
+                    )}
+                    {(() => {
+                      const todayStr = new Date().toISOString().slice(0, 10);
+                      const dDate = req.dispatch_date || req.expectedDispatchDate;
+                      const isBooked = req.booking_status === 'booked' || req.status === 'Booked';
+                      const isOverdue = dDate && dDate < todayStr && !isBooked && req.status !== 'Received';
+                      if (isOverdue) {
+                        return (
+                          <span style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fca5a5', padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: '800' }}>
+                            ⚠️ Overdue
+                          </span>
+                        );
+                      }
+                      if (isBooked) {
+                        return (
+                          <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: '700' }}>
+                            ✓ Booked
+                          </span>
+                        );
+                      }
+                      if (dDate) {
+                        return (
+                          <span style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: '700' }}>
+                            📅 Dispatch: {dDate}
+                          </span>
+                        );
+                      }
+                      if (req.po_wamid) {
+                        return (
+                          <span style={{ background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a', padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: '700' }}>
+                            ⏳ Awaiting Date
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
                     <span className={`status-badge ${req.status.toLowerCase().replace(/ /g, '')}`}>{req.status}</span>
                   </div>
                 </div>
@@ -3385,20 +3420,7 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
   const [proofFile, setProofFile] = useState(null);
   const [proofFileName, setProofFileName] = useState("");
   const [askingSupplier, setAskingSupplier] = useState(false);
-  // WhatsApp: whether the server has Meta set up, and this order's supplier chat.
-  const [waConfigured, setWaConfigured] = useState(true);
-  const [waMessages, setWaMessages] = useState([]);
-  const [showWaChat, setShowWaChat] = useState(false);
-  useEffect(() => {
-    if (!req?.id) return;
-    let cancelled = false;
-    apiService.getWhatsAppStatus().then(s => { if (!cancelled) setWaConfigured(!!s.configured); }).catch(() => {});
-    if (req.supplierAsk) {
-      apiService.getSupplierMessages(req.id).then(m => { if (!cancelled) setWaMessages(m); }).catch(() => {});
-    }
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [req?.id, req?.supplierAsk?.sentAt, req?.supplierAsk?.lastReplyAt]);
+  const [orderMessages, setOrderMessages] = useState([]);
 
   // Hooks must run unconditionally on every render (Rules of Hooks). Declaring
   // this useEffect after the early "not found" / "Pending" returns below caused
@@ -3406,6 +3428,17 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
   // order was opened, crashing the whole app to a blank screen. It now lives
   // above those early returns and guards its own logic internally instead.
   const hasEditPermission = !!req && (state.currentUser.role === 'Main Admin' || (state.currentUser.role === 'Sub Admin' && state.currentUser.permissions?.edit_orders));
+
+    useEffect(() => {
+    if (!requestId) return;
+    let isMounted = true;
+    apiService.getWhatsAppMessages(requestId)
+      .then(rows => {
+        if (isMounted && Array.isArray(rows)) setOrderMessages(rows);
+      })
+      .catch(() => {});
+    return () => { isMounted = false; };
+  }, [requestId]);
 
   useEffect(() => {
     if (!req || req.status === "Pending") return;
@@ -4155,6 +4188,55 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
       </header>
 
       <div style={{ paddingTop: '10px' }}>
+
+        {/* Banner: Dispatch date not selected, call supplier */}
+        {(req.needs_call === 1 || req.needs_call === '1') && (
+          <div style={{
+            background: '#fff1f2',
+            border: '2px solid #ef4444',
+            borderRadius: '16px',
+            padding: '16px 20px',
+            marginBottom: '20px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '26px' }}>📞</span>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontWeight: '900', color: '#b91c1c', fontSize: '15px' }}>
+                  Dispatch date not selected, call the supplier
+                </div>
+                <div style={{ fontSize: '12px', color: '#7f1d1d', marginTop: '2px' }}>
+                  The supplier has not selected a dispatch date after multiple reminders.
+                </div>
+              </div>
+            </div>
+            {supplier?.whatsappNumber || supplier?.phoneNumber || req.suggestedSupplierPhone ? (
+              <a
+                href={'tel:' + (supplier.whatsappNumber || supplier.phoneNumber || req.suggestedSupplierPhone)}
+                style={{
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  padding: '10px 18px',
+                  borderRadius: '8px',
+                  fontWeight: '800',
+                  fontSize: '13px',
+                  textDecoration: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                Call Supplier ({supplier.whatsappNumber || supplier.phoneNumber || req.suggestedSupplierPhone})
+              </a>
+            ) : null}
+          </div>
+        )}
+
         {(() => {
           const statusColors = {
             "Pending": "#E67E22",
@@ -4232,105 +4314,7 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
           </div>
         )}
 
-        {(req.status === "No Response" || req.supplierAsk) && req.status !== "Received" && req.status !== "Rejected" && (
-          <div style={{
-            background: 'var(--card-bg)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '16px',
-            padding: '16px 20px',
-            marginBottom: '20px',
-            boxShadow: 'var(--shadow-sm)'
-          }}>
-            <div style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.8px', marginBottom: '10px' }}>
-              Supplier on WhatsApp
-            </div>
-            {!req.supplierAsk ? (
-              hasEditPermission ? (
-                waConfigured ? (
-                  <button
-                    onClick={handleAskSupplier}
-                    disabled={askingSupplier}
-                    className="btn-orange"
-                    style={{ width: 'auto', padding: '10px 16px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', cursor: askingSupplier ? 'default' : 'pointer', opacity: askingSupplier ? 0.7 : 1 }}
-                  >
-                    <Icons.WhatsApp size={16} />
-                    {askingSupplier ? 'Sending...' : 'Ask Supplier: Available? Date?'}
-                  </button>
-                ) : (
-                  <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>WhatsApp is not set up on the server yet, so suppliers can't be asked automatically.</p>
-                )
-              ) : (
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No WhatsApp availability request sent yet.</p>
-              )
-            ) : (
-              <div>
-                <p style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' }}>
-                  {req.supplierAsk.stage === 'awaiting_availability' && `Asked ${new Date(req.supplierAsk.sentAt).toLocaleString()} — waiting for the supplier's reply.`}
-                  {req.supplierAsk.stage === 'awaiting_date' && 'Supplier confirmed the material is available — waiting for a delivery date.'}
-                  {req.supplierAsk.stage === 'replied' && req.supplierAsk.availability === 'unavailable' && 'Supplier said the material is not available.'}
-                  {req.supplierAsk.stage === 'replied' && req.supplierAsk.confirmedDate && `Available. Delivery date set to ${new Date(req.supplierAsk.confirmedDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} from the supplier's reply.`}
-                  {req.supplierAsk.stage === 'replied' && req.supplierAsk.needsReview && 'Couldn\'t read the supplier\'s reply automatically — please check it and set the date.'}
-                </p>
-                {req.supplierAsk.reminderSentAt && req.supplierAsk.stage === 'awaiting_availability' && (
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Reminder sent {new Date(req.supplierAsk.reminderSentAt).toLocaleString()}.</p>
-                )}
-                {req.supplierAsk.lastReply && (
-                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                    Last reply: "{req.supplierAsk.lastReply}"
-                  </p>
-                )}
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
-                  {hasEditPermission && req.supplierAsk.needsReview && (
-                    <button
-                      onClick={handleEditDispatchDate}
-                      className="btn-orange"
-                      style={{ width: 'auto', padding: '6px 12px', fontSize: '11px', marginBottom: 0, cursor: 'pointer' }}
-                    >
-                      Set Delivery Date
-                    </button>
-                  )}
-                  {hasEditPermission && waConfigured && req.supplierAsk.stage !== 'awaiting_availability' && (
-                    <button
-                      onClick={handleAskSupplier}
-                      disabled={askingSupplier}
-                      style={{ background: 'none', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '6px 12px', fontSize: '11px', fontWeight: '800', fontFamily: 'inherit', cursor: askingSupplier ? 'default' : 'pointer', color: 'var(--text-main)' }}
-                    >
-                      {askingSupplier ? 'Sending...' : 'Ask Again'}
-                    </button>
-                  )}
-                  {waMessages.length > 0 && (
-                    <button
-                      onClick={() => setShowWaChat(v => !v)}
-                      style={{ background: 'none', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '6px 12px', fontSize: '11px', fontWeight: '800', fontFamily: 'inherit', cursor: 'pointer', color: 'var(--text-main)' }}
-                    >
-                      {showWaChat ? 'Hide Messages' : `Show Messages (${waMessages.length})`}
-                    </button>
-                  )}
-                </div>
-                {showWaChat && (
-                  <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {waMessages.map((m, idx) => (
-                      <div key={idx} style={{
-                        alignSelf: m.direction === 'outbound' ? 'flex-end' : 'flex-start',
-                        maxWidth: '85%',
-                        background: m.direction === 'outbound' ? '#dcf8c6' : '#f3f4f6',
-                        borderRadius: '10px',
-                        padding: '8px 10px',
-                        fontSize: '12px',
-                        color: 'var(--text-main)'
-                      }}>
-                        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.body}</div>
-                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px', textAlign: 'right' }}>
-                          {m.direction === 'outbound' ? 'Mill Mate' : 'Supplier'} · {new Date(m.at).toLocaleString()}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+        
 
         {/* Purchase Order (PO) Details & Quick Access */}
         {(req.poNumber || req.supplierId || req.status !== "Pending") && (
@@ -4359,25 +4343,46 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
                 {req.transportMode && <div><b>Mode of Transport:</b> <span style={{ fontWeight: '800', color: 'var(--primary-orange)' }}>{req.transportMode}</span></div>}
               </div>
             </div>
-            <button
-              onClick={() => navigateTo(`#po-preview?id=${req.id}`)}
-              style={{
-                backgroundColor: 'var(--primary-orange)',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '8px 16px',
-                fontSize: '12px',
-                fontWeight: '800',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                boxShadow: 'var(--shadow-sm)'
-              }}
-            >
-              📄 View Purchase Order (PO)
-            </button>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => navigateTo('#view-chat?id=' + req.id)}
+                style={{
+                  backgroundColor: '#25D366',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '8px 14px',
+                  fontSize: '12px',
+                  fontWeight: '800',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: 'var(--shadow-sm)'
+                }}
+              >
+                <Icons.WhatsApp size={15} /> View Chat
+              </button>
+              <button
+                onClick={() => navigateTo('#po-preview?id=' + req.id)}
+                style={{
+                  backgroundColor: 'var(--primary-orange)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '8px 16px',
+                  fontSize: '12px',
+                  fontWeight: '800',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: 'var(--shadow-sm)'
+                }}
+              >
+                📄 View Purchase Order (PO)
+              </button>
+            </div>
           </div>
         )}
 
@@ -4918,97 +4923,6 @@ export function ChangePasswordForm({ user, apiService, closeModal }) {
   );
 }
 
-function EditProfileNameForm({ user, apiService, state, closeModal }) {
-  const [name, setName] = useState(user.name || "");
-  const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed) {
-      setError("Profile name is required.");
-      return;
-    }
-    setSaving(true);
-    setError("");
-    try {
-      const saved = await apiService.saveUser({
-        id: user.id,
-        name: trimmed
-      });
-      if (saved && saved.id) {
-        state.setCurrentUser(saved);
-        cacheCurrentUser(saved);
-        state.showToast("Profile Updated", `Profile name updated to "${trimmed}".`, "success");
-        closeModal();
-      } else {
-        throw new Error("Server did not return updated user.");
-      }
-    } catch (err) {
-      setError(err.message || "Failed to update profile name.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} style={{ textAlign: 'left', fontFamily: 'var(--font-family)' }}>
-      <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px', lineHeight: '1.4' }}>
-        Edit your profile name. This name will appear across the app and on orders you review or create.
-      </p>
-      <div className="form-group" style={{ marginBottom: '18px' }}>
-        <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px', display: 'block' }}>
-          Profile Name
-        </label>
-        <input
-          type="text"
-          className="form-control"
-          value={name}
-          placeholder="Enter your name"
-          onChange={(e) => { setName(e.target.value); setError(""); }}
-          autoFocus
-          style={{ cursor: 'text', border: error ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)' }}
-        />
-        {error && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px' }}>{error}</div>}
-      </div>
-      <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
-        <button
-          type="button"
-          onClick={closeModal}
-          disabled={saving}
-          style={{
-            padding: '10px 16px',
-            backgroundColor: '#f3f4f6',
-            color: '#374151',
-            border: '1px solid #d1d5db',
-            borderRadius: '8px',
-            fontSize: '13px',
-            fontWeight: '700',
-            cursor: 'pointer'
-          }}
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className="btn-orange"
-          disabled={saving}
-          style={{
-            padding: '10px 20px',
-            width: 'auto',
-            marginBottom: 0,
-            fontSize: '13px',
-            cursor: saving ? 'not-allowed' : 'pointer'
-          }}
-        >
-          {saving ? 'Saving...' : 'Save Name'}
-        </button>
-      </div>
-    </form>
-  );
-}
-
 // ----------------------------------------------------
 // 7. SETTINGS MAIN VIEW COMPONENT
 // ----------------------------------------------------
@@ -5028,21 +4942,7 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
     openModal();
   };
 
-  const openEditNameModal = () => {
-    setModalContent(
-      <EditProfileNameForm
-        key={`edit-name-${Date.now()}`}
-        user={user}
-        apiService={apiService}
-        state={state}
-        closeModal={closeModal}
-      />,
-      "Edit Profile Name"
-    );
-    openModal();
-  };
-
-  const handleSaveAvatar = async (updatedUser) => {
+  const handleSaveProfile = async (updatedUser) => {
     let saved;
     try {
       // Send avatar and name fields
@@ -5054,7 +4954,7 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
         profileColor: updatedUser.profileColor
       });
     } catch (err) {
-      console.error("Failed to save avatar settings:", err);
+      console.error("Failed to save profile settings:", err);
       state.showToast("Could Not Save Changes", err.message || "Your profile was not updated. Please try again.", "success");
       return;
     }
@@ -5064,13 +4964,19 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
     }
     state.setCurrentUser(saved);
     cacheCurrentUser(saved);
-    state.showToast("Profile Saved", "Your avatar changes were saved.", "success");
+    state.showToast("Profile Saved", "Your profile changes were saved.", "success");
     closeModal();
   };
 
-  const openAvatarModal = () => {
+  const openProfileModal = (options = {}) => {
     setModalContent(
-      <AvatarEditor key={`avatar-editor-${Date.now()}`} user={user} onSave={handleSaveAvatar} onClose={closeModal} />,
+      <AvatarEditor 
+        key={`avatar-editor-${Date.now()}`} 
+        user={user} 
+        initialEditingName={Boolean(options.startEditingName)}
+        onSave={handleSaveProfile} 
+        onClose={closeModal} 
+      />,
       "Customize Avatar"
     );
     openModal();
@@ -5091,15 +4997,20 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
         <div className="stat-card" style={{ marginBottom: '24px', padding: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-              <div onClick={openAvatarModal} style={{ cursor: 'pointer', position: 'relative' }} title="Change Avatar">
+              <div onClick={() => openProfileModal({ startEditingName: false })} style={{ cursor: 'pointer', position: 'relative' }} title="Change Avatar & Profile">
                 <UserAvatar user={user} size={48} />
               </div>
               <div style={{ textAlign: 'left' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontWeight: '800', fontSize: '16px', color: 'var(--text-main)' }}>{user.name}</span>
+                  <span 
+                    onClick={() => openProfileModal({ startEditingName: false })}
+                    style={{ fontWeight: '800', fontSize: '16px', color: 'var(--text-main)', cursor: 'pointer' }}
+                  >
+                    {user.name}
+                  </span>
                   <button 
                     type="button" 
-                    onClick={openEditNameModal}
+                    onClick={() => openProfileModal({ startEditingName: true })}
                     style={{ 
                       background: 'none', 
                       border: 'none', 
@@ -5122,10 +5033,23 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
             </div>
             <button 
               type="button"
-              onClick={openAvatarModal}
-              style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '6px 12px', fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', cursor: 'pointer' }}
+              onClick={() => openProfileModal({ startEditingName: false })}
+              style={{ 
+                background: '#f3f4f6', 
+                border: '1px solid #e5e7eb', 
+                borderRadius: '8px', 
+                padding: '6px 14px', 
+                fontSize: '12px', 
+                fontWeight: '700', 
+                color: 'var(--text-main)', 
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}
             >
-              Avatar
+              <Icons.Edit size={13} style={{ color: 'var(--primary-orange)' }} />
+              Edit
             </button>
           </div>
         </div>
@@ -6978,11 +6902,21 @@ export function UserAvatar({ user, size = 40 }) {
 // ----------------------------------------------------
 // 16. AVATAR / PROFILE COLOR EDITOR DRAWER COMPONENT
 // ----------------------------------------------------
-export function AvatarEditor({ user, onSave, onClose }) {
+export function AvatarEditor({ user, onSave, onClose, initialEditingName = false }) {
   const [editName, setEditName] = useState(user.name || "");
+  const [isEditingName, setIsEditingName] = useState(initialEditingName);
+  const [nameError, setNameError] = useState("");
+  const nameInputRef = useRef(null);
   const initialColor = normalizeAvatarColor(user.profileColor || user.avatarColor);
   const [selectedColor, setSelectedColor] = useState(initialColor);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (isEditingName && nameInputRef.current) {
+      nameInputRef.current.focus();
+      nameInputRef.current.select();
+    }
+  }, [isEditingName]);
 
   const [selectedIcon, setSelectedIcon] = useState(() => {
     if (user.avatar && typeof user.avatar === 'string' && user.avatar.startsWith('data:image/svg')) {
@@ -7088,6 +7022,12 @@ export function AvatarEditor({ user, onSave, onClose }) {
 
   const handleSave = async () => {
     if (isSaving) return;
+    const trimmed = editName.trim();
+    if (!trimmed) {
+      setNameError("Profile name cannot be empty.");
+      setIsEditingName(true);
+      return;
+    }
     const finalAvatar = customPhoto
       ? customPhoto
       : (selectedIcon ? buildPresetSvg(selectedIcon, selectedColor) : "");
@@ -7096,7 +7036,7 @@ export function AvatarEditor({ user, onSave, onClose }) {
     try {
       await onSave({
         ...user,
-        name: editName.trim() || user.name,
+        name: trimmed,
         avatar: finalAvatar,
         avatarColor: selectedColor,
         profileColor: selectedColor
@@ -7108,7 +7048,7 @@ export function AvatarEditor({ user, onSave, onClose }) {
 
   const previewUser = {
     ...user,
-    name: editName || user.name,
+    name: editName.trim() || user.name,
     avatar: currentAvatar,
     avatarColor: selectedColor,
     profileColor: selectedColor
@@ -7116,30 +7056,107 @@ export function AvatarEditor({ user, onSave, onClose }) {
 
   return (
     <div style={{ textAlign: 'left' }}>
-      {/* Live Avatar Preview */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px 0 18px', borderBottom: '1px solid var(--border-color)', marginBottom: '18px' }}>
+      {/* Live Avatar Preview with Name and Edit Option */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px 0 16px', borderBottom: '1px solid var(--border-color)', marginBottom: '18px' }}>
         <div style={{ position: 'relative' }}>
           <UserAvatar user={previewUser} size={80} />
         </div>
-        <div style={{ marginTop: '10px', textAlign: 'center' }}>
-          <div style={{ fontWeight: '800', fontSize: '16px', color: 'var(--text-main)' }}>{editName || user.name || "User"}</div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{user.role || "Role"} • Profile Preview</div>
+        <div style={{ marginTop: '10px', textAlign: 'center', width: '100%' }}>
+          {isEditingName ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', maxWidth: '280px', width: '100%', margin: '0 auto' }}>
+                <input
+                  ref={nameInputRef}
+                  type="text"
+                  className="form-control"
+                  value={editName}
+                  onChange={e => { setEditName(e.target.value); if (nameError) setNameError(""); }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (editName.trim()) {
+                        setIsEditingName(false);
+                        setNameError("");
+                      } else {
+                        setNameError("Profile name cannot be empty.");
+                      }
+                    }
+                  }}
+                  placeholder="Enter profile name"
+                  style={{
+                    textAlign: 'center',
+                    fontWeight: '700',
+                    fontSize: '15px',
+                    padding: '6px 12px',
+                    height: '38px',
+                    borderRadius: '8px',
+                    border: nameError ? '1.5px solid var(--status-red)' : '1.5px solid var(--primary-orange)',
+                    background: 'var(--card-bg, #fff)'
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (editName.trim()) {
+                      setIsEditingName(false);
+                      setNameError("");
+                    } else {
+                      setNameError("Profile name cannot be empty.");
+                    }
+                  }}
+                  style={{
+                    height: '38px',
+                    padding: '0 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    backgroundColor: 'var(--primary-orange)',
+                    color: '#fff',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    flexShrink: 0
+                  }}
+                  title="Done editing name"
+                >
+                  Done
+                </button>
+              </div>
+              {nameError && <div style={{ color: 'var(--status-red)', fontSize: '11px' }}>{nameError}</div>}
+            </div>
+          ) : (
+            <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <span 
+                onClick={() => setIsEditingName(true)}
+                style={{ fontWeight: '800', fontSize: '16px', color: 'var(--text-main)', cursor: 'pointer' }}
+                title="Click to edit name"
+              >
+                {editName.trim() || user.name || "User"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsEditingName(true)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '2px 4px',
+                  color: 'var(--primary-orange)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '4px'
+                }}
+                title="Edit Name"
+                aria-label="Edit Profile Name"
+              >
+                <Icons.Edit size={16} />
+              </button>
+            </div>
+          )}
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+            {user.role || "Role"} • Profile Preview
+          </div>
         </div>
-      </div>
-
-      {/* Profile Name Field */}
-      <div className="form-group" style={{ marginBottom: '18px' }}>
-        <label style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px', display: 'block' }}>
-          Profile Name
-        </label>
-        <input 
-          type="text" 
-          className="form-control" 
-          value={editName} 
-          onChange={e => setEditName(e.target.value)} 
-          placeholder="Enter profile name" 
-          style={{ cursor: 'text' }}
-        />
       </div>
 
       {/* Avatar Color Selection */}
@@ -7545,6 +7562,135 @@ export function DepartmentManagementView({ state, navigateTo, openModal, closeMo
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ----------------------------------------------------
+// WHATSAPP SUPPLIER CHAT TIMELINE VIEW
+// ----------------------------------------------------
+export function ViewChatView({ state, navigateTo, goBack, orderId }) {
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const req = state.requests.find(r => String(r.id).trim() === String(orderId).trim()) || {};
+  const supplier = state.suppliers.find(s => s.id === req.supplierId) || {};
+  const supplierPhone = supplier.whatsappNumber || supplier.phoneNumber || req.suggestedSupplierPhone || '';
+  const supplierName = supplier.companyName || req.suggestedSupplier || 'Supplier';
+  const poNumber = req.poNumber || req.id;
+
+  useEffect(() => {
+    if (!orderId) return;
+    let isMounted = true;
+    apiService.getWhatsAppMessages(orderId)
+      .then(rows => {
+        if (isMounted) {
+          setMessages(Array.isArray(rows) ? rows : []);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (isMounted) setLoading(false);
+      });
+    return () => { isMounted = false; };
+  }, [orderId]);
+
+  return (
+    <div>
+      <header className="app-header">
+        <div className="header-left">
+          <button className="back-btn" onClick={() => (goBack || navigateTo)('#order-details?id=' + orderId)} style={{ cursor: 'pointer' }}>
+            <Icons.Back />
+          </button>
+          <div>
+            <h1 style={{ fontSize: '16px', margin: 0 }}>{supplierName}</h1>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              {supplierPhone ? '+' + String(supplierPhone).replace(/\D/g, '') : 'WhatsApp Chat'} &bull; PO: {poNumber}
+            </div>
+          </div>
+        </div>
+        <div className="header-right">
+          {supplierPhone && (
+            <a
+              href={'https://api.whatsapp.com/send?phone=' + String(supplierPhone).replace(/\D/g, '')}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                color: '#25D366',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '12px',
+                fontWeight: '700',
+                textDecoration: 'none'
+              }}
+            >
+              <Icons.WhatsApp size={16} /> Open
+            </a>
+          )}
+        </div>
+      </header>
+
+      <div style={{ padding: '16px', maxWidth: '600px', margin: '0 auto' }}>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+            Loading WhatsApp messages...
+          </div>
+        ) : messages.length === 0 ? (
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '12px',
+            padding: '30px 20px',
+            textAlign: 'center',
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-muted)'
+          }}>
+            <Icons.WhatsApp size={36} />
+            <div style={{ fontWeight: '700', marginTop: '12px', color: 'var(--text-main)' }}>No WhatsApp messages yet</div>
+            <div style={{ fontSize: '12px', marginTop: '4px' }}>
+              Messages and status updates between Mill Mate and {supplierName} will appear here in real time.
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {messages.map((m) => {
+              const isOutbound = m.direction === 'outbound';
+              const time = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+              return (
+                <div
+                  key={m.id}
+                  style={{
+                    alignSelf: isOutbound ? 'flex-end' : 'flex-start',
+                    maxWidth: '82%',
+                    backgroundColor: isOutbound ? '#DCF8C6' : '#FFFFFF',
+                    borderRadius: isOutbound ? '12px 12px 0 12px' : '12px 12px 12px 0',
+                    padding: '10px 14px',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                    border: '1px solid rgba(0,0,0,0.05)',
+                    textAlign: 'left'
+                  }}
+                >
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: isOutbound ? '#15803d' : '#0284c7', marginBottom: '4px' }}>
+                    {isOutbound ? 'Mill Mate (Outbound)' : supplierName}
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#1f2937', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: '1.4' }}>
+                    {m.body || ('[' + (m.type || 'message') + ']')}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '4px', marginTop: '4px', fontSize: '10px', color: '#6b7280' }}>
+                    <span>{time}</span>
+                    {isOutbound && (
+                      <span style={{ color: m.status === 'read' ? '#0284c7' : '#6b7280', fontWeight: '800' }}>
+                        {m.status === 'read' ? '✓✓' : m.status === 'delivered' ? '✓✓' : m.status === 'sent' ? '✓' : m.status === 'failed' ? '⚠️' : '•'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
