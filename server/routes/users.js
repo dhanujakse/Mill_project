@@ -12,6 +12,9 @@ router.use(requireAuth);
 // The avatar palette offered in the app (Customize Avatar).
 const AVATAR_COLORS = ['yellow', 'black', 'orange', 'darkbrown'];
 const MAX_AVATAR_CHARS = 1024 * 1024;
+const NAME_REGEX = /^[A-Za-z\s.'-]+$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_REGEX = /^(?:\+91)?\d{10}$/;
 
 router.get('/', requireRole('Main Admin'), (req, res) => {
   const rows = db.prepare('SELECT * FROM users ORDER BY created_at ASC').all();
@@ -46,6 +49,7 @@ router.post('/', requireRole('Main Admin'), asyncHandler(async (req, res) => {
     VALUES (?, ?, ?, ?, 1, 1, ?)
   `).run(id, username, passwordHash, body.role, JSON.stringify({
     name, email, phone, department: body.department,
+    whatsappAlerts: body.whatsappAlerts !== undefined ? Boolean(body.whatsappAlerts) : true,
     permissions: body.role === 'Sub Admin' ? (body.permissions || {}) : {}
   }));
 
@@ -131,6 +135,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
     avatar: body.avatar !== undefined ? body.avatar : (currentProfile.avatar || ''),
     profileColor: chosenColor,
     avatarColor: chosenColor,
+    whatsappAlerts: body.whatsappAlerts !== undefined ? Boolean(body.whatsappAlerts) : (currentProfile.whatsappAlerts !== undefined ? currentProfile.whatsappAlerts : true),
     permissions: (isAdmin && body.role !== undefined)
       ? (body.role === 'Sub Admin' ? (body.permissions || currentProfile.permissions || {}) : {})
       : currentProfile.permissions

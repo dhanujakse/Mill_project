@@ -10,8 +10,14 @@
 // instance and no keys are needed anywhere. S3_ENDPOINT is only for tests against
 // an S3-compatible emulator.
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const { S3_BUCKET, S3_REGION, AWS_REGION, S3_ENDPOINT } = process.env;
 
@@ -83,6 +89,26 @@ export const uploadFile = async ({ buffer, ext, contentType }) => {
     ServerSideEncryption: 'AES256'
   }));
   return `s3:${key}`;
+};
+
+// Stores a binary buffer to S3 if configured, or locally in data/uploads/
+export const saveMediaBuffer = async ({ buffer, mimeType, filename }) => {
+  const ext = (filename || '').split('.').pop() || (mimeType === 'application/pdf' ? 'pdf' : (mimeType?.includes('png') ? 'png' : 'jpg'));
+  const cleanExt = ext.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  if (s3Enabled) {
+    return uploadFile({ buffer, ext: cleanExt, contentType: mimeType || 'application/octet-stream' });
+  }
+
+  // Local fallback storage
+  const uploadDir = path.join(__dirname, 'data', 'uploads');
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+  const savedFilename = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${cleanExt}`;
+  const filePath = path.join(uploadDir, savedFilename);
+  fs.writeFileSync(filePath, buffer);
+  return `local:uploads/${savedFilename}`;
 };
 
 // Short-lived link the browser can open directly; the bucket itself stays private.

@@ -1,13 +1,16 @@
 import jwt from 'jsonwebtoken';
 import { db } from '../db.js';
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET environment variable is required. Set it in server/.env');
-}
+const getJwtSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET environment variable is required. Set it in server/.env');
+  }
+  return secret;
+};
 
 export const signToken = (user) => {
-  return jwt.sign({ sub: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
+  return jwt.sign({ sub: user.id, username: user.username, role: user.role }, getJwtSecret(), { expiresIn: '30d' });
 };
 
 // Verifies the bearer token and loads the current user fresh from the DB on
@@ -21,8 +24,8 @@ export const requireAuth = (req, res, next) => {
   }
   let payload;
   try {
-    payload = jwt.verify(token, JWT_SECRET);
-  } catch (e) {
+    payload = jwt.verify(token, getJwtSecret());
+  } catch (_err) {
     return res.status(401).json({ error: 'Invalid or expired session' });
   }
   const row = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.sub);

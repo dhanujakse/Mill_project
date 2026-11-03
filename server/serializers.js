@@ -17,6 +17,7 @@ export const serializeUser = (row) => {
     avatar: profile.avatar || '',
     profileColor: profile.profileColor || profile.avatarColor || 'orange',
     avatarColor: profile.profileColor || profile.avatarColor || 'orange',
+    whatsappAlerts: profile.whatsappAlerts !== false,
     permissions: profile.permissions || {}
   };
 };

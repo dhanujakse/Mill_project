@@ -21,6 +21,7 @@ import {
   PendingOrdersView,
   DepartmentManagementView,
   AutomationPanel,
+  ViewChatView,
   Icons
 } from './components/Views';
 
@@ -707,8 +708,10 @@ export default function App() {
         return <PoPreviewView {...navProps} requestId={params.id} />;
       case '#live-orders':
         return <LiveOrdersView {...navProps} />;
-      case '#order-details':
+            case '#order-details':
         return <OrderDetailsView {...navProps} requestId={params.id} />;
+      case '#view-chat':
+        return <ViewChatView {...navProps} orderId={params.id} />;
       case '#settings':
         return <SettingsView {...navProps} />;
       case '#settings/suppliers':

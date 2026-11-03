@@ -90,25 +90,83 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS whatsapp_messages (
     id TEXT PRIMARY KEY,
     request_id TEXT,
-    direction TEXT NOT NULL,
+    order_id TEXT,
+    direction TEXT,
     to_number TEXT,
     from_number TEXT,
     provider_message_id TEXT,
+    wamid TEXT,
+    type TEXT,
     status TEXT,
     body TEXT,
+    error TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS supplier_conversations (
+    id TEXT PRIMARY KEY,
+    request_id TEXT,
+    supplier_id TEXT,
+    supplier_phone TEXT,
+    state TEXT,
+    required_qty REAL,
+    required_unit TEXT,
+    required_date TEXT,
+    supplier_qty REAL,
+    supplier_unit TEXT,
+    committed_date TEXT,
+    committed_time TEXT,
+    commitment_status TEXT,
+    last_response_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS processed_webhook_ids (
+    message_id TEXT PRIMARY KEY,
+    processed_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `);
 
 // Migrates a whatsapp_messages table created before the Twilio -> Meta Cloud
 // API switch, back when the column was named for Twilio's message SID.
-// No-ops (caught) once already renamed, or on a fresh install that never
-// had the old column.
 try {
   db.exec('ALTER TABLE whatsapp_messages RENAME COLUMN twilio_sid TO provider_message_id');
 } catch {
   // already migrated, or fresh install - nothing to do
 }
+
+// Idempotent column addition helper for node:sqlite
+const ensureColumn = (tableName, columnName, colDefinition) => {
+  try {
+    const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
+    const exists = columns.some(c => c.name.toLowerCase() === columnName.toLowerCase());
+    if (!exists) {
+      db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${colDefinition}`);
+    }
+  } catch (err) {
+    console.error(`Migration error adding ${columnName} to ${tableName}:`, err?.message || err);
+  }
+};
+
+// Purchase order columns on requests table
+ensureColumn('requests', 'po_wamid', 'TEXT');
+ensureColumn('requests', 'po_sent_at', 'TEXT');
+ensureColumn('requests', 'dispatch_date', 'TEXT');
+ensureColumn('requests', 'booking_status', "TEXT DEFAULT 'pending'");
+ensureColumn('requests', 'lr_file_path', 'TEXT');
+ensureColumn('requests', 'lr_received_at', 'TEXT');
+ensureColumn('requests', 'last_reminder_date', 'TEXT');
+ensureColumn('requests', 'reminders_sent', 'INTEGER DEFAULT 0');
+ensureColumn('requests', 'needs_call', 'INTEGER DEFAULT 0');
+
+// whatsapp_messages columns
+ensureColumn('whatsapp_messages', 'direction', 'TEXT');
+ensureColumn('whatsapp_messages', 'wamid', 'TEXT');
+ensureColumn('whatsapp_messages', 'order_id', 'TEXT');
+ensureColumn('whatsapp_messages', 'type', 'TEXT');
+ensureColumn('whatsapp_messages', 'status', 'TEXT');
+ensureColumn('whatsapp_messages', 'error', 'TEXT');
 
 // ----------------------------------------------------
 // One-time seed: default accounts, demo data, defaults.
