@@ -52,7 +52,7 @@ body {
   overflow: hidden;
   height: 100vh;
   height: 100dvh; /* shrinks with the on-screen keyboard instead of hiding under it */
-  width: 100vw;
+  width: 100%;
 }
 
 /* Desktop Centering and Mobile-First Viewport */
@@ -318,6 +318,8 @@ body {
 .app-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden; /* never let the page drag sideways on a narrow phone */
+  overflow-wrap: break-word; /* long names, PO numbers and emails wrap instead of widening the page */
   /* top clears the status bar/notch; bottom leaves space for the floating nav */
   padding: calc(24px + var(--safe-top)) 20px calc(100px + var(--safe-bottom)) 20px;
   position: relative;
@@ -1228,14 +1230,25 @@ select.form-control {
 
 .card-header-row {
   display: flex;
+  flex-wrap: wrap; /* long supplier names push the badges to a new line, not off-screen */
   justify-content: space-between;
   align-items: center;
+  gap: 6px 8px;
 }
 
 .card-header-row h3 {
   font-size: 18px;
   font-weight: 700;
   color: var(--text-main);
+  flex: 1 1 140px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.card-header-row > div {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
 }
 
 .badge-view-details {

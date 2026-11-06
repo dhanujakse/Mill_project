@@ -720,16 +720,23 @@ export default function App() {
         showToast,
         logout
       },
-      navigateTo: (h) => {
+      // { replace: true } swaps the current page instead of adding one, for
+      // automatic redirects: otherwise Back returns to the page that redirects,
+      // which sends you forward again and Back seems stuck.
+      navigateTo: (h, { replace = false } = {}) => {
         const target = h || '#home';
         setNavHistory(prev => {
           if (prev[prev.length - 1] === target) return prev;
-          const newStack = [...prev, target];
+          const newStack = replace ? [...prev.slice(0, -1), target] : [...prev, target];
           const trimmed = newStack.length > 50 ? newStack.slice(-50) : newStack;
           try { sessionStorage.setItem('pms_nav_history', JSON.stringify(trimmed)); } catch (e) {}
           return trimmed;
         });
-        window.location.hash = target;
+        if (replace) {
+          window.location.replace(`${window.location.pathname}${window.location.search}${target}`);
+        } else {
+          window.location.hash = target;
+        }
         setCurrentHash(target);
         setModalOpen(false);
       },

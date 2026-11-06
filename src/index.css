@@ -2,8 +2,11 @@
 html, body, #root {
   margin: 0;
   padding: 0;
-  width: 100vw;
+  width: 100%;
   height: 100vh;
+  /* Phone browsers count the address bar in 100vh, which cut off the bottom
+     of the app; dvh is the part actually visible. */
+  height: 100dvh;
   box-sizing: border-box;
   background-color: #121212;
 }

@@ -1505,7 +1505,7 @@ export function CreateRequestView({ state, navigateTo, goBack, addNotification, 
 
         <div className="form-group" style={{ marginTop: '20px', textAlign: 'left' }}>
           <label style={{ fontSize: '13px', fontWeight: '800', marginBottom: '8px', display: 'block', color: 'var(--text-main)' }}>Attachment Document</label>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
             <button 
               type="button"
               onClick={startWebcam}
@@ -2166,9 +2166,9 @@ export function RequestedOrdersView({ state, navigateTo, goBack, addNotification
     // Route non-Pending, non-eligible requests
     if (selectedReq) {
       if (selectedReq.status === "Rejected" && (!selectedReq.poNumber || selectedReq.rejectedFrom === "RequestedOrders")) {
-        navigateTo('#rejected-orders');
+        navigateTo('#rejected-orders', { replace: true });
       } else if (selectedReq.status !== "Pending" && selectedReq.status !== "Rejected") {
-        navigateTo(`#order-details?id=${selectedReq.id}`);
+        navigateTo(`#order-details?id=${selectedReq.id}`, { replace: true });
       }
     }
   }, [selectedReq, navigateTo]);
@@ -2259,9 +2259,9 @@ export function RequestedOrdersView({ state, navigateTo, goBack, addNotification
                     {req.productName} {req.items && req.items.length > 1 ? <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--primary-orange)', background: '#fff7ed', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fed7aa', marginLeft: '6px' }}>+{req.items.length - 1} more item{req.items.length > 2 ? 's' : ''}</span> : null} <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)' }}>({req.qty} {req.units})</span>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: 'var(--text-muted)', paddingTop: '6px', borderTop: '1px dashed var(--border-color)' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '4px 10px', fontSize: '12px', color: 'var(--text-muted)', paddingTop: '6px', borderTop: '1px dashed var(--border-color)' }}>
                     <div>Requested by: <b style={{ color: 'var(--text-main)' }}>{req.employeeName || "Employee"}</b></div>
-                    <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px' }}>
                       {req.dueDate && <div>Due: <b style={{ color: 'var(--primary-orange)' }}>{formatDueDate(req.dueDate)}</b></div>}
                       <div>Date: <b style={{ color: 'var(--text-main)' }}>{new Date(req.date).toLocaleDateString('en-GB')}</b></div>
                     </div>
@@ -3088,8 +3088,8 @@ function StatusFilterButton({ tab, count, isActive, onClick, gridColumn }) {
         alignItems: 'center',
         justifyContent: 'center',
         gap: '4px',
-        padding: '8px 2px',
-        height: '56px',
+        padding: '6px 2px',
+        minHeight: '56px', // grows with large phone text instead of clipping the label
         border: `2px solid ${statusColor}`,
         background: bg,
         color: textColor,
@@ -3440,16 +3440,9 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
     return () => { isMounted = false; };
   }, [requestId]);
 
-  useEffect(() => {
-    if (!req || req.status === "Pending") return;
-    if (hasEditPermission && (!req.expectedDispatchDate || req.expectedDispatchDate === "")) {
-      const timer = setTimeout(() => {
-        handleEditDispatchDate();
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [req?.id, req?.status, req?.expectedDispatchDate, hasEditPermission]);
+  // The dispatch date used to pop up automatically on every order without one,
+  // covering the page and trapping Back. Suppliers now send it over WhatsApp, and
+  // admins can still set it with the edit button on the dispatch date row.
 
   if (state.initialLoading) {
     return (
