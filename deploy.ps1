@@ -118,9 +118,15 @@ if ($localCommit -ne $remoteCommit) {
 
 # ---- 4. SSH access for this PC ----------------------------------------------
 Step '4/8 Allowing this PC through the AWS firewall (SSH)'
-try {
-  $myIp = (Invoke-RestMethod -Uri 'https://checkip.amazonaws.com' -TimeoutSec 15 -ErrorAction Stop).Trim()
-} catch { Fail "Could not find this PC's public IP address: $($_.Exception.Message)" }
+# Some networks can't reach checkip.amazonaws.com, so try a few services.
+$myIp = $null
+foreach ($ipUrl in 'https://checkip.amazonaws.com', 'https://api.ipify.org', 'https://ifconfig.me/ip') {
+  try {
+    $candidate = (Invoke-RestMethod -Uri $ipUrl -TimeoutSec 15 -ErrorAction Stop).ToString().Trim()
+    if ($candidate -match '^\d{1,3}(\.\d{1,3}){3}$') { $myIp = $candidate; break }
+  } catch { }
+}
+if (-not $myIp) { Fail "Could not find this PC's public IP address. Check the internet connection." }
 $myCidr = "$myIp/32"
 $sshCidrs = aws ec2 describe-security-groups --group-ids $SecurityGroup --profile $AwsProfile --region $AwsRegion `
   --query 'SecurityGroups[0].IpPermissions[?FromPort==`22`].IpRanges[].CidrIp' --output text

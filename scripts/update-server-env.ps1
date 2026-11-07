@@ -45,7 +45,15 @@ $pairs.Keys | ForEach-Object { Write-Host "   $_" }
 
 # ---- 1. Firewall ----
 Write-Host '1/2 Allowing this PC through the AWS firewall (SSH)...'
-$myIp = (Invoke-RestMethod -Uri 'https://checkip.amazonaws.com' -TimeoutSec 15).Trim()
+# Some networks can't reach checkip.amazonaws.com, so try a few services.
+$myIp = $null
+foreach ($ipUrl in 'https://checkip.amazonaws.com', 'https://api.ipify.org', 'https://ifconfig.me/ip') {
+  try {
+    $candidate = (Invoke-RestMethod -Uri $ipUrl -TimeoutSec 15 -ErrorAction Stop).ToString().Trim()
+    if ($candidate -match '^\d{1,3}(\.\d{1,3}){3}$') { $myIp = $candidate; break }
+  } catch { }
+}
+if (-not $myIp) { Write-Host 'Could not find this PC public IP address. Check the internet connection.' -ForegroundColor Red; exit 1 }
 $cidrs = aws ec2 describe-security-groups --group-ids $SecurityGroup --profile $AwsProfile --region $AwsRegion `
   --query 'SecurityGroups[0].IpPermissions[?FromPort==`22`].IpRanges[].CidrIp' --output text
 if ("$cidrs" -match [regex]::Escape("$myIp/32")) {
