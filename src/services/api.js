@@ -218,6 +218,10 @@ export const apiService = {
     return apiFetch(`/suppliers/${encodeURIComponent(supplierId)}`, { method: 'PUT', body: updatedSupplier });
   },
 
+  async deleteSupplier(supplierId) {
+    return apiFetch(`/suppliers/${encodeURIComponent(supplierId)}`, { method: 'DELETE' });
+  },
+
   // ------------------------------------------------
   // AUDIT TRAIL LOGS API
   // ------------------------------------------------

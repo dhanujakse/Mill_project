@@ -5137,6 +5137,24 @@ export function SuppliersView({ state, navigateTo, openModal, setModalContent, c
     closeModal();
   };
 
+  const handleDeleteSupplier = async (supplierId) => {
+    const target = (suppliers || []).find(s => s.id === supplierId);
+    const name = target?.companyName || "this supplier";
+    if (!window.confirm(`Are you sure you want to delete supplier "${name}"? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      await apiService.deleteSupplier(supplierId);
+      state.setSuppliers((prev) => prev.filter(s => s.id !== supplierId));
+      if (state.logEvent) {
+        state.logEvent("Supplier Management", "Deleted Supplier", name);
+      }
+      closeModal();
+    } catch (err) {
+      alert(err.message || "Failed to delete supplier.");
+    }
+  };
+
   const openAddDialog = () => {
     setModalContent(
       <SupplierForm onSave={handleSaveSupplier} />,
@@ -5147,7 +5165,7 @@ export function SuppliersView({ state, navigateTo, openModal, setModalContent, c
 
   const openEditDialog = (sup) => {
     setModalContent(
-      <SupplierForm supplier={sup} onSave={handleSaveSupplier} />,
+      <SupplierForm supplier={sup} onSave={handleSaveSupplier} onDelete={handleDeleteSupplier} />,
       "Edit Supplier"
     );
     openModal();
@@ -5175,7 +5193,28 @@ export function SuppliersView({ state, navigateTo, openModal, setModalContent, c
                 <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)' }}>{sup.companyName}</h3>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Contact: {sup.contactPerson}</div>
               </div>
-              {isAdmin && <button className="badge-view-details" onClick={() => openEditDialog(sup)} style={{ backgroundColor: 'var(--primary-orange)' }}>Edit</button>}
+              {isAdmin && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button className="badge-view-details" onClick={() => openEditDialog(sup)} style={{ backgroundColor: 'var(--primary-orange)' }}>Edit</button>
+                  <button
+                    onClick={() => handleDeleteSupplier(sup.id)}
+                    title="Delete supplier"
+                    style={{
+                      background: '#fee2e2',
+                      border: '1px solid #fecaca',
+                      color: '#dc2626',
+                      borderRadius: '4px',
+                      padding: '4px 8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Icons.Trash size={14} />
+                  </button>
+                </div>
+              )}
             </div>
             <div style={{ fontSize: '12px', marginBottom: '6px', lineHeight: '1.4' }}>
               <b>WA:</b> {sup.whatsappNumber} &nbsp;&bull;&nbsp; <b>Email:</b> {sup.email}
@@ -5193,7 +5232,7 @@ export function SuppliersView({ state, navigateTo, openModal, setModalContent, c
   );
 }
 
-function SupplierForm({ supplier, onSave }) {
+function SupplierForm({ supplier, onSave, onDelete }) {
   const [company, setCompany] = useState(supplier ? supplier.companyName : "");
   const [contact, setContact] = useState(supplier ? supplier.contactPerson : "");
   const [phone, setPhone] = useState(supplier ? supplier.whatsappNumber : "");
@@ -5282,7 +5321,31 @@ function SupplierForm({ supplier, onSave }) {
         <label>Supplier Remarks (Optional)</label>
         <textarea className="form-control" rows="2" placeholder="Supplier Remarks (e.g. fast shipping)" value={remarks} onChange={e => setRemarks(e.target.value)} style={{ resize: 'vertical' }}></textarea>
       </div>
-      <button className="btn-dark" onClick={handleSave} style={{ marginTop: '10px', width: '100%', cursor: 'pointer' }}>Save Supplier</button>
+      <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+        <button className="btn-dark" onClick={handleSave} style={{ flex: 1, cursor: 'pointer' }}>
+          {supplier ? 'Update Supplier' : 'Save Supplier'}
+        </button>
+        {supplier && onDelete && (
+          <button
+            type="button"
+            onClick={() => onDelete(supplier.id)}
+            style={{
+              padding: '10px 16px',
+              backgroundColor: '#fee2e2',
+              color: '#dc2626',
+              border: '1px solid #f87171',
+              borderRadius: '6px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <Icons.Trash size={16} /> Delete
+          </button>
+        )}
+      </div>
     </div>
   );
 }

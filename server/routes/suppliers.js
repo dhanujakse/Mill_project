@@ -58,4 +58,11 @@ router.put('/:id', canManageSuppliers, (req, res) => {
   res.json(supplierData);
 });
 
+router.delete('/:id', canManageSuppliers, (req, res) => {
+  const existing = db.prepare('SELECT id FROM suppliers WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Supplier not found' });
+  db.prepare('DELETE FROM suppliers WHERE id = ?').run(req.params.id);
+  res.json({ success: true, id: req.params.id });
+});
+
 export default router;
