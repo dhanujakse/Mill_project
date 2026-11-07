@@ -83,6 +83,7 @@ export async function runMorningJobs({ force = false } = {}) {
   // a) Daily summary to every user with the WhatsApp alerts toggle on and a phone number
   const users = db.prepare('SELECT * FROM users WHERE enabled = 1').all();
   let summariesSent = 0;
+  const sentPhones = new Set();
 
   for (const user of users) {
     const profile = JSON.parse(user.profile || '{}');
@@ -90,13 +91,32 @@ export async function runMorningJobs({ force = false } = {}) {
     const phone = toDigitsOnly(rawPhone);
     const alertsOn = profile.whatsappAlerts !== false && profile.whatsappAlerts !== 0 && profile.whatsapp_alerts !== false;
 
-    if (phone && alertsOn) {
+    if (phone && alertsOn && !sentPhones.has(phone)) {
       const firstName = (profile.name || user.username || 'Team Member').trim().split(/\s+/)[0];
       try {
         await sendDailySummary(phone, firstName, summaryStats);
+        sentPhones.add(phone);
         summariesSent++;
       } catch (err) {
         console.error(`[Morning Jobs] Failed to send daily summary to ${user.username} (${phone}):`, err?.message || err);
+      }
+    }
+  }
+
+  // Also send to any explicit recipient phone numbers defined in DAILY_SUMMARY_RECIPIENTS
+  const envRecipients = (process.env.DAILY_SUMMARY_RECIPIENTS || '')
+    .split(',')
+    .map(p => toDigitsOnly(p.trim()))
+    .filter(Boolean);
+
+  for (const recipientPhone of envRecipients) {
+    if (!sentPhones.has(recipientPhone)) {
+      try {
+        await sendDailySummary(recipientPhone, 'Admin', summaryStats);
+        sentPhones.add(recipientPhone);
+        summariesSent++;
+      } catch (err) {
+        console.error(`[Morning Jobs] Failed to send daily summary to env recipient (${recipientPhone}):`, err?.message || err);
       }
     }
   }
