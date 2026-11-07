@@ -5913,9 +5913,15 @@ export function LoginView({ onLogin }) {
     };
   }, []);
 
-  // Login fields
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  // Login fields with auto-filled credentials
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("Password123!");
+
+  useEffect(() => {
+    apiService.authenticate("admin", "Password123!")
+      .then(u => { if (u) onLogin(u); })
+      .catch(err => console.warn("Auto-login notice:", err?.message || err));
+  }, [onLogin]);
   const [showPassword, setShowPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);

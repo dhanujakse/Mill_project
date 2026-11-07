@@ -3,6 +3,7 @@
 // validating inbound webhook handshakes and signatures.
 import crypto from 'node:crypto';
 import { db } from './db.js';
+import { generatePoPdfBuffer } from './routes/files.js';
 
 const GRAPH_API_VERSION = 'v21.0';
 
@@ -236,6 +237,31 @@ export const getSupplierNameForOrder = (order) => {
   return name || 'Supplier';
 };
 
+// Uploads a document/file buffer directly to Meta Media API
+export const uploadMediaToMeta = async (buffer, filename = 'document.pdf', mimeType = 'application/pdf') => {
+  const token = getAccessToken();
+  const phoneNumberId = getPhoneNumberId();
+  if (!token || !phoneNumberId) throw new Error('Meta credentials missing');
+
+  const blob = new Blob([buffer], { type: mimeType });
+  const formData = new FormData();
+  formData.append('messaging_product', 'whatsapp');
+  formData.append('type', mimeType);
+  formData.append('file', blob, filename);
+
+  const res = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/media`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.id) {
+    throw new Error(json?.error?.message || `Failed to upload media to Meta (${res.status})`);
+  }
+  return json.id;
+};
+
 // 1. sendPO: Sends PO with document header, PO number body, and Flow button
 export const sendPO = async (orderOrId) => {
   const order = resolveOrder(orderOrId);
@@ -253,16 +279,28 @@ export const sendPO = async (orderOrId) => {
   }
   const filename = `PO-${poNumber.replace(/^PO-?/i, '')}.pdf`;
 
+  // Always attempt direct Meta Media upload so Meta has the PDF bytes natively (no external fetch needed)
+  let documentParam = { link: pdfUrl, filename };
+  if (!isDryRun()) {
+    try {
+      const pdfBuffer = generatePoPdfBuffer(order, order.data || {});
+      const mediaId = await uploadMediaToMeta(pdfBuffer, filename, 'application/pdf');
+      if (mediaId) {
+        documentParam = { id: mediaId, filename };
+        console.log(`[sendPO] Uploaded PO PDF to Meta Media (${mediaId}) for order ${order.id}`);
+      }
+    } catch (uploadErr) {
+      console.warn('[sendPO] Media upload fallback to signed URL link:', uploadErr.message);
+    }
+  }
+
   const components = [
     {
       type: 'header',
       parameters: [
         {
           type: 'document',
-          document: {
-            link: pdfUrl,
-            filename
-          }
+          document: documentParam
         }
       ]
     },

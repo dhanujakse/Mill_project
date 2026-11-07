@@ -15,7 +15,7 @@ const router = Router();
 // app uses (shared/poPdfLayout.js).
 const PO_SIGNATORY = process.env.PO_SIGNATORY_NAME || 'Johnson'; // same as CONFIG.users.admin.name in src/config.js
 
-function generatePoPdfBuffer(order) {
+export function generatePoPdfBuffer(order) {
   let supplier = {};
   if (order.supplierId) {
     const srow = db.prepare('SELECT data FROM suppliers WHERE id = ?').get(order.supplierId);
