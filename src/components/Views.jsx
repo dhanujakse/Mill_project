@@ -24,6 +24,7 @@ export const Icons = {
   Edit: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 12} height={p?.size || p?.height || 12} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
   Key: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 12} height={p?.size || p?.height || 12} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>,
   Power: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 12} height={p?.size || p?.height || 12} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>,
+  Ban: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 12} height={p?.size || p?.height || 12} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>,
   Check: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 12} height={p?.size || p?.height || 12} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="20 6 9 17 4 12"/></svg>,
   Camera: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 16} height={p?.size || p?.height || 16} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>,
   Upload: (p) => <svg viewBox="0 0 24 24" width={p?.size || p?.width || 16} height={p?.size || p?.height || 16} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
@@ -5220,7 +5221,7 @@ function SupplierForm({ supplier, onSave, onDelete }) {
   const [address, setAddress] = useState(supplier?.address || "");
   const [products, setProducts] = useState(supplier?.products || "");
   const [gst, setGst] = useState(supplier?.gst || "");
-  const [rating, setRating] = useState(supplier?.rating || 5);
+  const [rating, setRating] = useState(supplier?.rating ? String(supplier.rating) : "");
   const [remarks, setRemarks] = useState(supplier?.remarks || "");
   const [validationError, setValidationError] = useState("");
 
@@ -5232,7 +5233,7 @@ function SupplierForm({ supplier, onSave, onDelete }) {
     setAddress(supplier?.address || "");
     setProducts(supplier?.products || "");
     setGst(supplier?.gst || "");
-    setRating(supplier?.rating || 5);
+    setRating(supplier?.rating ? String(supplier.rating) : "");
     setRemarks(supplier?.remarks || "");
     setValidationError("");
   }, [supplier]);
@@ -5252,7 +5253,7 @@ function SupplierForm({ supplier, onSave, onDelete }) {
       address: address.trim(),
       products: products.trim(),
       gst: gst.trim(),
-      rating: parseInt(rating),
+      rating: rating ? parseInt(rating, 10) : 5,
       remarks: remarks.trim()
     };
     onSave(data, !!supplier);
@@ -5292,11 +5293,12 @@ function SupplierForm({ supplier, onSave, onDelete }) {
         <div className="form-group">
           <label>Rating (1-5 Stars)</label>
           <select className="form-control" value={rating} onChange={e => setRating(e.target.value)} style={{ cursor: 'pointer' }}>
-            <option value="5">⭐⭐⭐⭐⭐ (5 Stars)</option>
-            <option value="4">⭐⭐⭐⭐ (4 Stars)</option>
-            <option value="3">⭐⭐⭐ (3 Stars)</option>
-            <option value="2">⭐⭐ (2 Stars)</option>
-            <option value="1">⭐ (1 Star)</option>
+            <option value="">Select Rating</option>
+            <option value="5">5 Stars ⭐⭐⭐⭐⭐</option>
+            <option value="4">4 Stars ⭐⭐⭐⭐</option>
+            <option value="3">3 Stars ⭐⭐⭐</option>
+            <option value="2">2 Stars ⭐⭐</option>
+            <option value="1">1 Star ⭐</option>
           </select>
         </div>
       </div>
@@ -6759,7 +6761,7 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
                     </div>
 
                     {/* Right Side: [Disable] [Edit] on top, [Reset Password] below */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'stretch', flexShrink: 0, width: '122px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'stretch', flexShrink: 0, width: '136px' }}>
                       {/* Row 1: Disable | Edit */}
                       <div style={{ display: 'flex', gap: '6px' }}>
                         {u.role !== "Main Admin" && (
@@ -6771,23 +6773,22 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
                               color: u.disabled ? 'var(--status-green)' : 'var(--status-red)',
                               border: u.disabled ? '1px solid var(--status-green)' : '1px solid var(--status-red)',
                               borderRadius: '6px',
-                              padding: '0 4px',
+                              padding: '0 6px',
                               fontSize: '11px',
                               fontWeight: '700',
                               cursor: 'pointer',
                               display: 'inline-flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              gap: '3px',
+                              gap: '4px',
                               height: '30px',
                               flex: '1 1 0',
                               minWidth: 0,
                               boxSizing: 'border-box',
                               transition: 'all 0.2s'
                             }}
-                            title={u.disabled ? "Enable Account" : "Disable Account"}
                           >
-                            <Icons.Power />
+                            {u.disabled ? <Icons.Check size={12} style={{ flexShrink: 0 }} /> : <Icons.Ban size={12} style={{ flexShrink: 0 }} />}
                             <span>{u.disabled ? 'Enable' : 'Disable'}</span>
                           </button>
                         )}
@@ -6799,23 +6800,22 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
                             color: 'var(--dark-charcoal)',
                             border: '1px solid var(--dark-charcoal)',
                             borderRadius: '6px',
-                            padding: '0 4px',
+                            padding: '0 6px',
                             fontSize: '11px',
                             fontWeight: '700',
                             cursor: 'pointer',
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            gap: '3px',
+                            gap: '4px',
                             height: '30px',
                             flex: '1 1 0',
                             minWidth: 0,
                             boxSizing: 'border-box',
                             transition: 'all 0.2s'
                           }}
-                          title="Edit User Details"
                         >
-                          <Icons.Edit />
+                          <Icons.Edit size={12} style={{ flexShrink: 0 }} />
                           <span>Edit</span>
                         </button>
                       </div>
