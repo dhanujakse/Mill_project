@@ -5024,26 +5024,6 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{user.role}</div>
               </div>
             </div>
-            <button 
-              type="button"
-              onClick={() => openProfileModal({ startEditingName: false })}
-              style={{ 
-                background: '#f3f4f6', 
-                border: '1px solid #e5e7eb', 
-                borderRadius: '8px', 
-                padding: '6px 14px', 
-                fontSize: '12px', 
-                fontWeight: '700', 
-                color: 'var(--text-main)', 
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px'
-              }}
-            >
-              <Icons.Edit size={13} style={{ color: 'var(--primary-orange)' }} />
-              Edit
-            </button>
           </div>
         </div>
 
@@ -5157,7 +5137,7 @@ export function SuppliersView({ state, navigateTo, openModal, setModalContent, c
 
   const openAddDialog = () => {
     setModalContent(
-      <SupplierForm onSave={handleSaveSupplier} />,
+      <SupplierForm key={`new-sup-${Date.now()}`} onSave={handleSaveSupplier} />,
       "Add Supplier"
     );
     openModal();
@@ -5165,7 +5145,7 @@ export function SuppliersView({ state, navigateTo, openModal, setModalContent, c
 
   const openEditDialog = (sup) => {
     setModalContent(
-      <SupplierForm supplier={sup} onSave={handleSaveSupplier} onDelete={handleDeleteSupplier} />,
+      <SupplierForm key={`edit-sup-${sup.id}-${Date.now()}`} supplier={sup} onSave={handleSaveSupplier} onDelete={handleDeleteSupplier} />,
       "Edit Supplier"
     );
     openModal();
@@ -5233,36 +5213,47 @@ export function SuppliersView({ state, navigateTo, openModal, setModalContent, c
 }
 
 function SupplierForm({ supplier, onSave, onDelete }) {
-  const [company, setCompany] = useState(supplier ? supplier.companyName : "");
-  const [contact, setContact] = useState(supplier ? supplier.contactPerson : "");
-  const [phone, setPhone] = useState(supplier ? supplier.whatsappNumber : "");
-  const [email, setEmail] = useState(supplier ? supplier.email : "");
-  const [address, setAddress] = useState(supplier ? supplier.address : "");
-  const [products, setProducts] = useState(supplier ? supplier.products : "");
-  
-  // New Supplier details
-  const [gst, setGst] = useState(supplier ? (supplier.gst || "") : "");
-  const [rating, setRating] = useState(supplier ? (supplier.rating || 5) : 5);
-  const [remarks, setRemarks] = useState(supplier ? (supplier.remarks || "") : "");
+  const [company, setCompany] = useState(supplier?.companyName || "");
+  const [contact, setContact] = useState(supplier?.contactPerson || "");
+  const [phone, setPhone] = useState(supplier?.whatsappNumber || supplier?.phoneNumber || "");
+  const [email, setEmail] = useState(supplier?.email || "");
+  const [address, setAddress] = useState(supplier?.address || "");
+  const [products, setProducts] = useState(supplier?.products || "");
+  const [gst, setGst] = useState(supplier?.gst || "");
+  const [rating, setRating] = useState(supplier?.rating || 5);
+  const [remarks, setRemarks] = useState(supplier?.remarks || "");
   const [validationError, setValidationError] = useState("");
 
+  useEffect(() => {
+    setCompany(supplier?.companyName || "");
+    setContact(supplier?.contactPerson || "");
+    setPhone(supplier?.whatsappNumber || supplier?.phoneNumber || "");
+    setEmail(supplier?.email || "");
+    setAddress(supplier?.address || "");
+    setProducts(supplier?.products || "");
+    setGst(supplier?.gst || "");
+    setRating(supplier?.rating || 5);
+    setRemarks(supplier?.remarks || "");
+    setValidationError("");
+  }, [supplier]);
+
   const handleSave = () => {
-    if (!company || !contact || !phone || !products.trim()) {
+    if (!company.trim() || !contact.trim() || !phone.trim() || !products.trim()) {
       setValidationError("Please fill in Company name, Contact person, WhatsApp number, and Products Supplied.");
       return;
     }
     const data = {
       id: supplier ? supplier.id : `sup-${Date.now()}`,
-      companyName: company,
-      contactPerson: contact,
-      whatsappNumber: phone,
-      phoneNumber: phone,
-      email,
-      address,
-      products,
-      gst,
+      companyName: company.trim(),
+      contactPerson: contact.trim(),
+      whatsappNumber: phone.trim(),
+      phoneNumber: phone.trim(),
+      email: email.trim(),
+      address: address.trim(),
+      products: products.trim(),
+      gst: gst.trim(),
       rating: parseInt(rating),
-      remarks
+      remarks: remarks.trim()
     };
     onSave(data, !!supplier);
   };
@@ -5277,26 +5268,26 @@ function SupplierForm({ supplier, onSave, onDelete }) {
 
       <div className="form-group">
         <label>Company Name</label>
-        <input type="text" className="form-control" placeholder="Company Name" value={company} onChange={e => setCompany(e.target.value)} />
+        <input type="text" className="form-control" placeholder="Company Name" value={company} onChange={e => setCompany(e.target.value)} autoComplete="off" />
       </div>
       <div className="form-group">
         <label>Contact Person</label>
-        <input type="text" className="form-control" placeholder="Contact Person" value={contact} onChange={e => setContact(e.target.value)} />
+        <input type="text" className="form-control" placeholder="Contact Person" value={contact} onChange={e => setContact(e.target.value)} autoComplete="off" />
       </div>
       <div className="form-row">
         <div className="form-group">
           <label>WhatsApp Number</label>
-          <input type="text" className="form-control" placeholder="WhatsApp Number" value={phone} onChange={e => setPhone(e.target.value)} />
+          <input type="text" className="form-control" placeholder="WhatsApp Number" value={phone} onChange={e => setPhone(e.target.value)} autoComplete="off" />
         </div>
         <div className="form-group">
           <label>GST Number (Optional)</label>
-          <input type="text" className="form-control" placeholder="GST Number" value={gst} onChange={e => setGst(e.target.value)} />
+          <input type="text" className="form-control" placeholder="GST Number" value={gst} onChange={e => setGst(e.target.value)} autoComplete="off" />
         </div>
       </div>
       <div className="form-row">
         <div className="form-group">
           <label>Email (Optional)</label>
-          <input type="email" className="form-control" placeholder="Email Address" value={email} onChange={e => setEmail(e.target.value)} />
+          <input type="email" className="form-control" placeholder="Email Address" value={email} onChange={e => setEmail(e.target.value)} autoComplete="off" />
         </div>
         <div className="form-group">
           <label>Rating (1-5 Stars)</label>
@@ -5311,15 +5302,15 @@ function SupplierForm({ supplier, onSave, onDelete }) {
       </div>
       <div className="form-group">
         <label>Address (Optional)</label>
-        <input type="text" className="form-control" placeholder="Address" value={address} onChange={e => setAddress(e.target.value)} />
+        <input type="text" className="form-control" placeholder="Address" value={address} onChange={e => setAddress(e.target.value)} autoComplete="off" />
       </div>
       <div className="form-group">
         <label>Products Supplied</label>
-        <input type="text" className="form-control" placeholder="Products Supplied (e.g. bearings, valves)" value={products} onChange={e => setProducts(e.target.value)} />
+        <input type="text" className="form-control" placeholder="Products Supplied (e.g. bearings, valves)" value={products} onChange={e => setProducts(e.target.value)} autoComplete="off" />
       </div>
       <div className="form-group">
         <label>Supplier Remarks (Optional)</label>
-        <textarea className="form-control" rows="2" placeholder="Supplier Remarks (e.g. fast shipping)" value={remarks} onChange={e => setRemarks(e.target.value)} style={{ resize: 'vertical' }}></textarea>
+        <textarea className="form-control" rows="2" placeholder="Supplier Remarks (e.g. fast shipping)" value={remarks} onChange={e => setRemarks(e.target.value)} style={{ resize: 'vertical' }} autoComplete="off"></textarea>
       </div>
       <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
         <button className="btn-dark" onClick={handleSave} style={{ flex: 1, cursor: 'pointer' }}>
