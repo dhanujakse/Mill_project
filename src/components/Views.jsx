@@ -1061,7 +1061,7 @@ export function CreateRequestView({ state, navigateTo, goBack, addNotification, 
         priority: priority || "Normal",
         image: imageRef,
         imageName: attachedFileName || "",
-        supplierId: "",
+        supplierId: (suggestedSupplier ? (state.suppliers.find(s => s.companyName?.toLowerCase() === suggestedSupplier?.toLowerCase())?.id || "") : ""),
         poNumber: "",
         poDate: "",
         lrCopy: null,
@@ -1855,7 +1855,11 @@ export function RequestedOrdersView({ state, navigateTo, goBack, addNotification
       billTo: saved.billTo || (req ? req.billTo : "") || BILL_TO_OPTIONS[0],
       shipTo: saved.shipTo || (req ? (req.shipTo || req.billTo) : "") || BILL_TO_OPTIONS[0],
       transportMode: saved.transportMode !== undefined ? saved.transportMode : (req ? (req.transportMode || "") : ""),
-      supplierId: saved.supplierId !== undefined ? saved.supplierId : ((req && req.status === "Rejected") ? "" : (req?.supplierId || "")),
+      supplierId: saved.supplierId !== undefined
+        ? saved.supplierId
+        : ((req && req.status === "Rejected")
+            ? ""
+            : (req?.supplierId || (req?.suggestedSupplier ? (state.suppliers.find(s => s.companyName?.toLowerCase() === req.suggestedSupplier?.toLowerCase())?.id || "") : ""))),
       dueDate: saved.dueDate !== undefined ? saved.dueDate : (req ? (req.dueDate || "") : ""),
       priority: saved.priority !== undefined ? saved.priority : (req ? (req.priority || "Normal") : "Normal")
     };
@@ -2489,6 +2493,11 @@ export function RequestedOrdersView({ state, navigateTo, goBack, addNotification
                 {/* Supplier Section */}
                 {(() => {
                   const rejectedSupplierIds = getRejectedSupplierIds(req);
+                  const isReplacement = req.status === "Rejected";
+                  const prechosenSupplier = (!isReplacement && (req.supplierId || req.suggestedSupplier))
+                    ? (state.suppliers.find(s => (req.supplierId && s.id === req.supplierId) || (req.suggestedSupplier && s.companyName?.toLowerCase() === req.suggestedSupplier?.toLowerCase())) || (req.suggestedSupplier ? { companyName: req.suggestedSupplier } : null))
+                    : null;
+
                   const matchingSupplier = state.suppliers.find(s =>
                     !rejectedSupplierIds.includes(s.id) && (
                       (currentItems && currentItems.length > 0)
@@ -2544,7 +2553,14 @@ export function RequestedOrdersView({ state, navigateTo, goBack, addNotification
                   return (
                     <div className="form-group" style={{ marginBottom: '20px' }}>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>Supplier</label>
-                      {showSuggestion ? (
+                      {prechosenSupplier ? (
+                        <div>
+                          <div style={{ fontSize: '15px', fontWeight: '800', color: 'var(--text-main)', wordBreak: 'break-word' }}>
+                            {prechosenSupplier.companyName}
+                          </div>
+                          {renderSupplierDetails(prechosenSupplier)}
+                        </div>
+                      ) : showSuggestion ? (
                         <div>
                           {/* Supplier Name & Details */}
                           <div style={{ marginBottom: '12px' }}>
@@ -2964,10 +2980,46 @@ export function PoPreviewView({ state, navigateTo, goBack, requestId, addNotific
           >
             <Icons.WhatsApp size={18} /> Send PO on WhatsApp
           </button>
-          <button className="btn-outline" onClick={handleShareWhatsApp} style={{ width: '100%', cursor: 'pointer' }}>
-            Share PO PDF manually (pick the WhatsApp chat)
+          <button
+            type="button"
+            onClick={handleShareWhatsApp}
+            style={{
+              width: '100%',
+              padding: '12px 18px',
+              borderRadius: '8px',
+              fontWeight: '800',
+              fontSize: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              cursor: 'pointer',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              color: 'var(--text-main, #1B1B1F)',
+              border: '1px solid var(--border-color, #E5E7EB)'
+            }}
+          >
+            Share PO PDF manually via WhatsApp
           </button>
-          <button className="btn-outline" onClick={handleDownloadPdf} style={{ width: '100%', cursor: 'pointer' }}>
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            style={{
+              width: '100%',
+              padding: '12px 18px',
+              borderRadius: '8px',
+              fontWeight: '800',
+              fontSize: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              cursor: 'pointer',
+              backgroundColor: 'var(--card-bg, #ffffff)',
+              color: 'var(--text-main, #1B1B1F)',
+              border: '1px solid var(--border-color, #E5E7EB)'
+            }}
+          >
             Download PDF
           </button>
         </div>
@@ -3438,7 +3490,27 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
         if (isMounted && Array.isArray(rows)) setOrderMessages(rows);
       })
       .catch(() => {});
-    return () => { isMounted = false; };
+
+    // Requirement: Re-fetch order every 10 seconds while visible so supplier dispatch date updates automatically
+    const pollOrder = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const fresh = await apiService.getRequests();
+        if (isMounted && Array.isArray(fresh)) {
+          state.setRequests(fresh);
+        }
+        const msgs = await apiService.getWhatsAppMessages(requestId);
+        if (isMounted && Array.isArray(msgs)) {
+          setOrderMessages(msgs);
+        }
+      } catch {}
+    };
+
+    const intervalId = setInterval(pollOrder, 10000);
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
   }, [requestId]);
 
   // The dispatch date used to pop up automatically on every order without one,
@@ -3563,6 +3635,9 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
   const getExpectedDispatch = () => {
     if (req.expectedDispatchDate) {
       return req.expectedDispatchDate.split('T')[0];
+    }
+    if (req.dispatch_date) {
+      return req.dispatch_date.split('T')[0];
     }
     const d = new Date(req.poDate || req.date);
     d.setDate(d.getDate() + 3);
@@ -4351,11 +4426,10 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
                   cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '6px',
                   boxShadow: 'var(--shadow-sm)'
                 }}
               >
-                <Icons.WhatsApp size={15} /> View Chat
+                View Chat
               </button>
               <button
                 onClick={() => navigateTo('#po-preview?id=' + req.id)}
@@ -4939,10 +5013,11 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
   const handleSaveProfile = async (updatedUser) => {
     let saved;
     try {
-      // Send avatar and name fields
+      // Send avatar, name, and phone fields
       saved = await apiService.saveUser({
         id: updatedUser.id,
         name: updatedUser.name,
+        phone: updatedUser.phone,
         avatar: updatedUser.avatar,
         avatarColor: updatedUser.avatarColor,
         profileColor: updatedUser.profileColor
@@ -4968,6 +5043,7 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
         key={`avatar-editor-${Date.now()}`} 
         user={user} 
         initialEditingName={Boolean(options.startEditingName)}
+        initialEditingPhone={Boolean(options.startEditingPhone)}
         onSave={handleSaveProfile} 
         onClose={closeModal} 
       />,
@@ -5023,6 +5099,29 @@ export function SettingsView({ state, navigateTo, openModal, closeModal, setModa
                   </button>
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{user.role}</div>
+                {user.phone ? (
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{user.phone}</div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => openProfileModal({ startEditingPhone: true })}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      marginTop: '4px',
+                      color: 'var(--primary-orange)',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    + Add number
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -6630,6 +6729,11 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
           <label>Phone Number</label>
           <input type="tel" className="form-control" placeholder="e.g. 9876543210 or +919876543210" value={phone} onChange={e => { setPhone(e.target.value); validateUserField("phone", e.target.value); }} required style={{ cursor: 'text', border: errors.phone ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)' }} />
           {errors.phone && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px', textAlign: 'left' }}>{errors.phone}</div>}
+          {(role === "Main Admin" || role === "Sub Admin") && (
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', textAlign: 'left' }}>
+              Used for the daily WhatsApp summary
+            </div>
+          )}
         </div>
 
         {!editUser && (
@@ -6955,11 +7059,14 @@ export function UserAvatar({ user, size = 40 }) {
 // ----------------------------------------------------
 // 16. AVATAR / PROFILE COLOR EDITOR DRAWER COMPONENT
 // ----------------------------------------------------
-export function AvatarEditor({ user, onSave, onClose, initialEditingName = false }) {
+export function AvatarEditor({ user, onSave, onClose, initialEditingName = false, initialEditingPhone = false }) {
   const [editName, setEditName] = useState(user.name || "");
   const [isEditingName, setIsEditingName] = useState(initialEditingName);
   const [nameError, setNameError] = useState("");
   const nameInputRef = useRef(null);
+  const [phone, setPhone] = useState(user.phone || "");
+  const [phoneError, setPhoneError] = useState("");
+  const phoneInputRef = useRef(null);
   const initialColor = normalizeAvatarColor(user.profileColor || user.avatarColor);
   const [selectedColor, setSelectedColor] = useState(initialColor);
   const [isSaving, setIsSaving] = useState(false);
@@ -6968,8 +7075,11 @@ export function AvatarEditor({ user, onSave, onClose, initialEditingName = false
     if (isEditingName && nameInputRef.current) {
       nameInputRef.current.focus();
       nameInputRef.current.select();
+    } else if (initialEditingPhone && phoneInputRef.current) {
+      phoneInputRef.current.focus();
+      phoneInputRef.current.select();
     }
-  }, [isEditingName]);
+  }, [isEditingName, initialEditingPhone]);
 
   const [selectedIcon, setSelectedIcon] = useState(() => {
     if (user.avatar && typeof user.avatar === 'string' && user.avatar.startsWith('data:image/svg')) {
@@ -7081,6 +7191,17 @@ export function AvatarEditor({ user, onSave, onClose, initialEditingName = false
       setIsEditingName(true);
       return;
     }
+    let cleanPhone = (phone || "").trim();
+    if (cleanPhone) {
+      const phoneRegex = /^(?:\+91)?[6-9]\d{9}$/;
+      if (!phoneRegex.test(cleanPhone)) {
+        setPhoneError("Invalid Indian mobile number (must be a 10-digit number, optionally starting with +91).");
+        return;
+      }
+      const digits = cleanPhone.replace(/\D/g, '');
+      cleanPhone = digits.length === 10 ? `91${digits}` : digits;
+    }
+
     const finalAvatar = customPhoto
       ? customPhoto
       : (selectedIcon ? buildPresetSvg(selectedIcon, selectedColor) : "");
@@ -7090,6 +7211,7 @@ export function AvatarEditor({ user, onSave, onClose, initialEditingName = false
       await onSave({
         ...user,
         name: trimmed,
+        phone: cleanPhone,
         avatar: finalAvatar,
         avatarColor: selectedColor,
         profileColor: selectedColor
@@ -7210,6 +7332,31 @@ export function AvatarEditor({ user, onSave, onClose, initialEditingName = false
             {user.role || "Role"} • Profile Preview
           </div>
         </div>
+      </div>
+
+      {/* Phone Number */}
+      <div className="form-group" style={{ marginBottom: '18px' }}>
+        <label style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px', display: 'block' }}>
+          Phone Number
+        </label>
+        <input
+          ref={phoneInputRef}
+          type="tel"
+          className="form-control"
+          placeholder="e.g. 9876543210 or +919876543210"
+          value={phone}
+          onChange={(e) => {
+            setPhone(e.target.value);
+            if (phoneError) setPhoneError("");
+          }}
+          style={{ cursor: 'text', border: phoneError ? '1.5px solid var(--status-red)' : '1px solid var(--border-color)' }}
+        />
+        {phoneError && <div style={{ color: 'var(--status-red)', fontSize: '11px', marginTop: '4px' }}>{phoneError}</div>}
+        {(user.role === 'Main Admin' || user.role === 'Sub Admin') && (
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+            Used for the daily WhatsApp summary
+          </div>
+        )}
       </div>
 
       {/* Avatar Color Selection */}
@@ -7634,6 +7781,63 @@ export function ViewChatView({ state, navigateTo, goBack, orderId }) {
   const supplierName = supplier.companyName || req.suggestedSupplier || 'Supplier';
   const poNumber = req.poNumber || req.id;
 
+  const formatMessageText = (m) => {
+    let text = (m.body || '').trim();
+    if (!text) {
+      if (m.type === 'document') return 'Supplier sent a document';
+      if (m.type === 'image') return 'Supplier sent a photo';
+      return 'Message received';
+    }
+
+    if (text === '[template:po_dispatch_request_v2]') {
+      return `Purchase order ${poNumber} sent (PDF)`;
+    }
+    if (text === '[template:po_dispatch_day_reminder]') {
+      return `Dispatch day reminder sent for ${poNumber}`;
+    }
+    if (text === '[template:po_dispatch_overdue]' || text === '[template:dispatch_overdue_reschedule]') {
+      return `Overdue dispatch reminder sent for ${poNumber}`;
+    }
+    if (text === '[template:po_dispatch_date_pending]') {
+      return `Pending dispatch date reminder sent for ${poNumber}`;
+    }
+    if (text.startsWith('[template:') && text.endsWith(']')) {
+      return `Purchase order ${poNumber} update sent`;
+    }
+
+    if (text.startsWith('{') && text.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.dispatch_date || parsed.date) {
+          const raw = parsed.dispatch_date || parsed.date;
+          try {
+            const parts = String(raw).split('-');
+            if (parts.length === 3) {
+              const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+              return `Supplier selected dispatch date: ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+            }
+          } catch {}
+          return `Supplier selected dispatch date: ${raw}`;
+        }
+        if (parsed.committed_date) {
+          return `Supplier committed date: ${parsed.committed_date}`;
+        }
+      } catch {}
+    }
+
+    if (text === '[interactive]' || text === '[flow_reply]') {
+      return 'Supplier selected dispatch date';
+    }
+    if (text === '[document]') {
+      return 'Supplier sent a document';
+    }
+    if (text === '[image]') {
+      return 'Supplier sent a photo';
+    }
+
+    return text;
+  };
+
   useEffect(() => {
     if (!orderId) return;
     let isMounted = true;
@@ -7671,16 +7875,20 @@ export function ViewChatView({ state, navigateTo, goBack, orderId }) {
               target="_blank"
               rel="noreferrer"
               style={{
-                color: '#25D366',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
+                backgroundColor: 'var(--card-bg, #ffffff)',
+                color: 'var(--text-main, #1B1B1F)',
+                border: '1px solid var(--border-color, #E5E7EB)',
+                borderRadius: '8px',
+                padding: '6px 12px',
                 fontSize: '12px',
                 fontWeight: '700',
-                textDecoration: 'none'
+                textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                boxShadow: 'var(--shadow-sm)'
               }}
             >
-              <Icons.WhatsApp size={16} /> Open
+              Open via WhatsApp
             </a>
           )}
         </div>
@@ -7729,13 +7937,24 @@ export function ViewChatView({ state, navigateTo, goBack, orderId }) {
                     {isOutbound ? 'Mill Mate (Outbound)' : supplierName}
                   </div>
                   <div style={{ fontSize: '13px', color: '#1f2937', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: '1.4' }}>
-                    {m.body || ('[' + (m.type || 'message') + ']')}
+                    {formatMessageText(m)}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '4px', marginTop: '4px', fontSize: '10px', color: '#6b7280' }}>
                     <span>{time}</span>
                     {isOutbound && (
-                      <span style={{ color: m.status === 'read' ? '#0284c7' : '#6b7280', fontWeight: '800' }}>
-                        {m.status === 'read' ? '✓✓' : m.status === 'delivered' ? '✓✓' : m.status === 'sent' ? '✓' : m.status === 'failed' ? '⚠️' : '•'}
+                      <span
+                        style={{
+                          color: m.status === 'read' ? '#0284c7' : m.status === 'failed' ? '#dc2626' : '#6b7280',
+                          fontWeight: '700',
+                          fontSize: '10px',
+                          textTransform: 'capitalize',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '2px',
+                          marginLeft: '2px'
+                        }}
+                      >
+                        &bull; {m.status || 'sent'} {m.status === 'read' ? '✓✓' : m.status === 'delivered' ? '✓✓' : m.status === 'sent' ? '✓' : m.status === 'failed' ? '⚠️' : ''}
                       </span>
                     )}
                   </div>

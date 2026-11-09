@@ -126,6 +126,16 @@ db.exec(`
     message_id TEXT PRIMARY KEY,
     processed_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS job_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_name TEXT NOT NULL,
+    run_date TEXT NOT NULL,
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at TEXT,
+    status TEXT,
+    UNIQUE(job_name, run_date)
+  );
 `);
 
 // Migrates a whatsapp_messages table created before the Twilio -> Meta Cloud
@@ -167,6 +177,7 @@ ensureColumn('whatsapp_messages', 'order_id', 'TEXT');
 ensureColumn('whatsapp_messages', 'type', 'TEXT');
 ensureColumn('whatsapp_messages', 'status', 'TEXT');
 ensureColumn('whatsapp_messages', 'error', 'TEXT');
+ensureColumn('whatsapp_messages', 'trigger', 'TEXT');
 
 // ----------------------------------------------------
 // One-time seed: default accounts, demo data, defaults.
@@ -225,5 +236,105 @@ if (settingsCount === 0) {
   }));
   insertSetting.run('webhookUrl', '');
 }
+
+// Safe one-time link-up migration for WhatsApp messages with no order id
+export const linkExistingWhatsAppMessages = () => {
+  try {
+    const unlinked = db.prepare("SELECT * FROM whatsapp_messages WHERE order_id IS NULL").all();
+    if (!unlinked || unlinked.length === 0) {
+      console.log('[WhatsApp Migration] Link-up checked: 0 unlinked messages found (all up to date).');
+      return { linked: 0, leftAlone: 0 };
+    }
+
+    const requests = db.prepare("SELECT id, po_wamid, status, data FROM requests").all().map(r => {
+      let d = {};
+      try { d = JSON.parse(r.data || '{}'); } catch {}
+      const sup = d.supplierId ? db.prepare('SELECT data FROM suppliers WHERE id = ?').get(d.supplierId) : null;
+      let sData = {};
+      if (sup) {
+        try { sData = JSON.parse(sup.data || '{}'); } catch {}
+      }
+      const rawPhone = d.suggestedSupplierPhone || d.supplierAsk?.phone || d.supplierPhone || sData.phone || sData.whatsappNumber || '';
+      const digits = String(rawPhone || '').replace(/\D/g, '');
+      const phone = digits.length === 10 ? `91${digits}` : digits;
+      const isOpen = !['Completed', 'Cancelled'].includes(r.status);
+      const poNum = d.poNumber || `PO-${r.id.replace(/^REQ-?/i, '')}`;
+      return {
+        id: r.id,
+        po_wamid: r.po_wamid,
+        status: r.status,
+        phone,
+        isOpen,
+        poNumber: poNum
+      };
+    });
+
+    const openOrdersByPhone = new Map();
+    for (const r of requests) {
+      if (r.isOpen && r.phone) {
+        if (!openOrdersByPhone.has(r.phone)) openOrdersByPhone.set(r.phone, []);
+        openOrdersByPhone.get(r.phone).push(r);
+      }
+    }
+
+    let linkedCount = 0;
+    let leftAloneCount = 0;
+
+    const updateStmt = db.prepare(`
+      UPDATE whatsapp_messages
+      SET order_id = ?, request_id = ?, body = coalesce(?, body)
+      WHERE id = ?
+    `);
+
+    for (const msg of unlinked) {
+      let matchedOrder = null;
+
+      // 1. Direct match on po_wamid / provider_message_id
+      const msgWamid = msg.wamid || msg.provider_message_id;
+      if (msgWamid) {
+        matchedOrder = requests.find(r => r.po_wamid === msgWamid);
+      }
+
+      // 2. Supplier phone with exactly one open order
+      if (!matchedOrder) {
+        const rawMsgPhone = msg.direction === 'inbound' ? msg.from_number : msg.to_number;
+        const msgDigits = String(rawMsgPhone || '').replace(/\D/g, '');
+        const msgPhone = msgDigits.length === 10 ? `91${msgDigits}` : msgDigits;
+        if (msgPhone && openOrdersByPhone.has(msgPhone)) {
+          const candidates = openOrdersByPhone.get(msgPhone);
+          if (candidates.length === 1) {
+            matchedOrder = candidates[0];
+          }
+        }
+      }
+
+      if (matchedOrder) {
+        let updatedBody = null;
+        if (msg.body === '[template:po_dispatch_request_v2]') {
+          updatedBody = `Purchase order ${matchedOrder.poNumber} sent (PDF)`;
+        } else if (msg.body === '[template:po_dispatch_day_reminder]') {
+          updatedBody = `Dispatch day reminder sent for ${matchedOrder.poNumber}`;
+        } else if (msg.body === '[template:po_dispatch_overdue]' || msg.body === '[template:dispatch_overdue_reschedule]') {
+          updatedBody = `Overdue dispatch reminder sent for ${matchedOrder.poNumber}`;
+        } else if (msg.body === '[template:po_dispatch_date_pending]') {
+          updatedBody = `Pending dispatch date reminder sent for ${matchedOrder.poNumber}`;
+        }
+
+        updateStmt.run(matchedOrder.id, matchedOrder.id, updatedBody, msg.id);
+        linkedCount++;
+      } else {
+        leftAloneCount++;
+      }
+    }
+
+    console.log(`[WhatsApp Migration] Link-up completed: ${linkedCount} messages linked to orders, ${leftAloneCount} messages left alone.`);
+    return { linked: linkedCount, leftAlone: leftAloneCount };
+  } catch (err) {
+    console.error('[WhatsApp Migration] Error linking messages:', err?.message || err);
+    return { linked: 0, leftAlone: 0 };
+  }
+};
+
+linkExistingWhatsAppMessages();
 
 export default db;

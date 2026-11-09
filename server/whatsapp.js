@@ -94,15 +94,15 @@ export const toE164 = (raw) => {
   return digits ? `+${digits}` : '';
 };
 
-export const logMessage = ({ requestId, orderId, direction, toNumber, fromNumber, providerMessageId, wamid, type, status, body, error }) => {
+export const logMessage = ({ requestId, orderId, direction, toNumber, fromNumber, providerMessageId, wamid, type, status, body, error, trigger }) => {
   const id = `wam-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const messageWamid = wamid || providerMessageId || null;
   try {
     db.prepare(`
       INSERT INTO whatsapp_messages (
         id, request_id, order_id, direction, to_number, from_number,
-        provider_message_id, wamid, type, status, body, error
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        provider_message_id, wamid, type, status, body, error, trigger
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       requestId || null,
@@ -115,7 +115,8 @@ export const logMessage = ({ requestId, orderId, direction, toNumber, fromNumber
       type || null,
       status || null,
       body || null,
-      error || null
+      error || null,
+      trigger || null
     );
   } catch (err) {
     console.error('[whatsapp.js] Failed to log message:', err?.message || err);
@@ -166,7 +167,7 @@ const callGraphApi = async (endpoint, payload) => {
 };
 
 // Generic Template Sender
-export const sendTemplate = async (to, name, components = [], { replyToWamid, language } = {}) => {
+export const sendTemplate = async (to, name, components = [], { replyToWamid, language, orderId, requestId, body, trigger } = {}) => {
   const cleanTo = toDigitsOnly(to);
   const langCode = language || process.env.META_TEMPLATE_LANGUAGE;
   if (!langCode) {
@@ -190,6 +191,8 @@ export const sendTemplate = async (to, name, components = [], { replyToWamid, la
   const wamid = json?.messages?.[0]?.id;
 
   logMessage({
+    orderId: orderId || null,
+    requestId: requestId || orderId || null,
     direction: 'outbound',
     toNumber: cleanTo,
     fromNumber: getPhoneNumberId(),
@@ -197,7 +200,8 @@ export const sendTemplate = async (to, name, components = [], { replyToWamid, la
     wamid,
     type: 'template',
     status: 'sent',
-    body: `[template:${name}]`
+    body: body || `[template:${name}]`,
+    trigger: trigger || null
   });
 
   return wamid;
@@ -326,7 +330,12 @@ export const sendPO = async (orderOrId) => {
     }
   ];
 
-  const wamid = await sendTemplate(to, templateName, components);
+  const wamid = await sendTemplate(to, templateName, components, {
+    orderId: order.id,
+    requestId: order.id,
+    body: `Purchase order ${poNumber} sent (PDF)`,
+    trigger: 'po_send'
+  });
 
   // Save the wamid to po_wamid and po_sent_at in requests table (single source of truth for orders)
   db.prepare(`
@@ -339,7 +348,7 @@ export const sendPO = async (orderOrId) => {
 };
 
 // 2. sendDispatchDayMessage: META_DISPATCH_DAY_TEMPLATE_NAME, body {{1}} = PO number (reply to po_wamid)
-export const sendDispatchDayMessage = async (orderOrId) => {
+export const sendDispatchDayMessage = async (orderOrId, { trigger = 'dispatch_day_reminder' } = {}) => {
   const order = resolveOrder(orderOrId);
   const templateName = process.env.META_DISPATCH_DAY_TEMPLATE_NAME;
   if (!templateName) throw new Error('META_DISPATCH_DAY_TEMPLATE_NAME is not set in server/.env.');
@@ -357,13 +366,19 @@ export const sendDispatchDayMessage = async (orderOrId) => {
     }
   ];
 
-  const wamid = await sendTemplate(to, templateName, components, { replyToWamid: order.po_wamid });
-  db.prepare("UPDATE requests SET last_reminder_date = datetime('now'), reminders_sent = coalesce(reminders_sent, 0) + 1, updated_at = datetime('now') WHERE id = ?").run(order.id);
+  const wamid = await sendTemplate(to, templateName, components, {
+    replyToWamid: order.po_wamid,
+    orderId: order.id,
+    requestId: order.id,
+    body: `Dispatch day reminder sent for ${poNumber}`,
+    trigger
+  });
+  db.prepare("UPDATE requests SET last_reminder_date = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(order.id);
   return { wamid, poNumber };
 };
 
 // 3. sendOverdue: META_OVERDUE_TEMPLATE_NAME, {{1}} = supplier name, {{2}} = PO number, flow button (reply to po_wamid)
-export const sendOverdue = async (orderOrId) => {
+export const sendOverdue = async (orderOrId, { trigger = 'overdue_reminder' } = {}) => {
   const order = resolveOrder(orderOrId);
   const templateName = process.env.META_OVERDUE_TEMPLATE_NAME;
   if (!templateName) throw new Error('META_OVERDUE_TEMPLATE_NAME is not set in server/.env.');
@@ -397,13 +412,19 @@ export const sendOverdue = async (orderOrId) => {
     }
   ];
 
-  const wamid = await sendTemplate(to, templateName, components, { replyToWamid: order.po_wamid });
-  db.prepare("UPDATE requests SET last_reminder_date = datetime('now'), reminders_sent = coalesce(reminders_sent, 0) + 1, updated_at = datetime('now') WHERE id = ?").run(order.id);
+  const wamid = await sendTemplate(to, templateName, components, {
+    replyToWamid: order.po_wamid,
+    orderId: order.id,
+    requestId: order.id,
+    body: `Overdue dispatch reminder sent for ${poNumber}`,
+    trigger
+  });
+  db.prepare("UPDATE requests SET last_reminder_date = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(order.id);
   return { wamid, poNumber };
 };
 
 // 4. sendDatePending: META_PENDING_TEMPLATE_NAME, {{1}} = PO number, flow button (reply to po_wamid)
-export const sendDatePending = async (orderOrId) => {
+export const sendDatePending = async (orderOrId, { reminderNumber = 1, trigger } = {}) => {
   const order = resolveOrder(orderOrId);
   const templateName = process.env.META_PENDING_TEMPLATE_NAME;
   if (!templateName) throw new Error('META_PENDING_TEMPLATE_NAME is not set in server/.env.');
@@ -435,7 +456,14 @@ export const sendDatePending = async (orderOrId) => {
     }
   ];
 
-  const wamid = await sendTemplate(to, templateName, components, { replyToWamid: order.po_wamid });
+  const trig = trigger || `pending_date_reminder_${reminderNumber}`;
+  const wamid = await sendTemplate(to, templateName, components, {
+    replyToWamid: order.po_wamid,
+    orderId: order.id,
+    requestId: order.id,
+    body: `Pending dispatch date reminder sent for ${poNumber}`,
+    trigger: trig
+  });
   db.prepare("UPDATE requests SET last_reminder_date = datetime('now'), reminders_sent = coalesce(reminders_sent, 0) + 1, updated_at = datetime('now') WHERE id = ?").run(order.id);
   return { wamid, poNumber };
 };
@@ -533,7 +561,7 @@ export const sendFlowMessage = async (to, { header, bodyText, footer, flowId, fl
 };
 
 // 7. sendText: freeform text
-export const sendText = async (to, text, { replyToWamid } = {}) => {
+export const sendText = async (to, text, { replyToWamid, orderId, requestId } = {}) => {
   const cleanTo = toDigitsOnly(to);
   const payload = {
     messaging_product: 'whatsapp',
@@ -548,6 +576,8 @@ export const sendText = async (to, text, { replyToWamid } = {}) => {
   const wamid = json?.messages?.[0]?.id;
 
   logMessage({
+    orderId: orderId || null,
+    requestId: requestId || orderId || null,
     direction: 'outbound',
     toNumber: cleanTo,
     fromNumber: getPhoneNumberId(),
@@ -563,7 +593,7 @@ export const sendText = async (to, text, { replyToWamid } = {}) => {
 
 // 7b. sendDailySummary: META_SUMMARY_TEMPLATE_NAME with 6 body variables:
 // {{1}} first name, {{2}} live orders, {{3}} awaiting dispatch date, {{4}} booked, {{5}} overdue, {{6}} rejected
-export const sendDailySummary = async (to, firstName, stats = {}) => {
+export const sendDailySummary = async (to, firstName, stats = {}, { trigger = 'daily_summary' } = {}) => {
   const templateName = process.env.META_SUMMARY_TEMPLATE_NAME;
   if (!templateName) throw new Error('META_SUMMARY_TEMPLATE_NAME is not set in server/.env.');
 
@@ -587,7 +617,7 @@ export const sendDailySummary = async (to, firstName, stats = {}) => {
     }
   ];
 
-  const wamid = await sendTemplate(cleanTo, templateName, components, { language: langCode });
+  const wamid = await sendTemplate(cleanTo, templateName, components, { language: langCode, trigger });
   return { wamid, to: cleanTo };
 };
 

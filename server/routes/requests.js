@@ -1,13 +1,15 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { isDoneStatus } from '../jobs/morning.js';
+import { serializeRequest } from '../serializers.js';
 
 const router = Router();
 router.use(requireAuth);
 
 router.get('/', (req, res) => {
-  const rows = db.prepare('SELECT data FROM requests ORDER BY created_at ASC').all();
-  res.json(rows.map(r => JSON.parse(r.data)));
+  const rows = db.prepare('SELECT * FROM requests ORDER BY created_at ASC').all();
+  res.json(rows.map(serializeRequest));
 });
 
 router.post('/', (req, res) => {
@@ -44,7 +46,7 @@ router.post('/', (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
-  const existing = db.prepare('SELECT data FROM requests WHERE id = ?').get(req.params.id);
+  const existing = db.prepare('SELECT status, data, needs_call FROM requests WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Request not found' });
   if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
     return res.status(400).json({ error: 'Request body must be an object.' });
@@ -55,9 +57,19 @@ router.put('/:id', (req, res) => {
   let stored = {};
   try { stored = JSON.parse(existing.data) || {}; } catch (e) { stored = {}; }
   const requestData = { ...stored, ...req.body, id: req.params.id };
-  db.prepare("UPDATE requests SET status = ?, data = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(requestData.status || null, JSON.stringify(requestData), req.params.id);
-  res.json(requestData);
+
+  const isDone = isDoneStatus(requestData.status) || isDoneStatus(requestData.booking_status);
+  if (isDone) {
+    requestData.needs_call = 0;
+    requestData.needsCall = 0;
+  }
+  const needsCall = isDone ? 0 : (requestData.needs_call ?? existing.needs_call ?? 0);
+
+  const dispatchDate = requestData.dispatch_date || requestData.expectedDispatchDate || null;
+  db.prepare("UPDATE requests SET status = ?, dispatch_date = COALESCE(?, dispatch_date), data = ?, needs_call = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(requestData.status || null, dispatchDate, JSON.stringify(requestData), needsCall, req.params.id);
+  const updatedRow = db.prepare('SELECT * FROM requests WHERE id = ?').get(req.params.id);
+  res.json(serializeRequest(updatedRow));
 });
 
 router.delete('/:id', (req, res) => {

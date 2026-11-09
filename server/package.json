@@ -11,7 +11,8 @@
     "test:webhook": "node test_webhook.js",
     "test:live": "node scripts/send_live_test.js",
     "check:templates": "node scripts/check_templates.js",
-    "job:morning": "node scripts/run_morning_job.js"
+    "job:morning": "node scripts/run_morning_job.js",
+    "audit:whatsapp": "node scripts/audit_whatsapp.js"
   },
   "engines": {
     "node": ">=22.5.0"

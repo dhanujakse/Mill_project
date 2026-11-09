@@ -30,7 +30,12 @@ router.post('/', requireRole('Main Admin'), asyncHandler(async (req, res) => {
   const username = asText(body.username);
   const name = asText(body.name);
   const email = asText(body.email);
-  const phone = asText(body.phone);
+  const rawPhone = asText(body.phone);
+  let phone = rawPhone;
+  if (phone) {
+    const digits = phone.replace(/\D/g, '');
+    phone = digits.length === 10 ? `91${digits}` : digits;
+  }
 
   if (!username) return res.status(400).json({ error: 'Username is required.' });
   const validationError = validateUserFields({ name, email, phone });
@@ -153,7 +158,12 @@ router.put('/:id', asyncHandler(async (req, res) => {
     ...currentProfile,
     name: body.name !== undefined ? asText(body.name) : currentProfile.name,
     email: body.email !== undefined ? asText(body.email) : currentProfile.email,
-    phone: body.phone !== undefined ? asText(body.phone) : currentProfile.phone,
+    phone: body.phone !== undefined ? (() => {
+      const p = asText(body.phone);
+      if (!p) return '';
+      const d = p.replace(/\D/g, '');
+      return d.length === 10 ? `91${d}` : d;
+    })() : currentProfile.phone,
     department: (isAdmin && body.department !== undefined) ? body.department : currentProfile.department,
     avatar: body.avatar !== undefined ? body.avatar : (currentProfile.avatar || ''),
     profileColor: chosenColor,

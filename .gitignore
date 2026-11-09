@@ -28,6 +28,8 @@ server/data/uploads/
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+**/.vscode/
+*.code-workspace
 .idea
 .DS_Store
 *.suo

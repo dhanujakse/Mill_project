@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db } from '../db.js';
+import { db, withTransaction } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import {
@@ -73,7 +73,13 @@ router.post('/po/:orderId/send', requireAuth, asyncHandler(async (req, res) => {
     timestamp: new Date().toISOString(),
     remarks: `Purchase Order sent via WhatsApp (WAMID: ${result.wamid}).`
   });
-  saveRequestData(row.id, row.status, { ...data, history });
+  const nowIso = new Date().toISOString();
+  saveRequestData(row.id, row.status, {
+    ...data,
+    po_wamid: result.wamid,
+    po_sent_at: nowIso,
+    history
+  });
 
   res.json({ success: true, ...result });
 }));
@@ -128,9 +134,12 @@ router.get('/messages/:orderId', requireAuth, asyncHandler(async (req, res) => {
   const orderId = req.params.orderId;
   const rows = db.prepare(`
     SELECT * FROM whatsapp_messages
-    WHERE order_id = ? OR request_id = ?
+    WHERE order_id = ?
+       OR request_id = ?
+       OR wamid = (SELECT po_wamid FROM requests WHERE id = ?)
+       OR provider_message_id = (SELECT po_wamid FROM requests WHERE id = ?)
     ORDER BY created_at ASC
-  `).all(orderId, orderId);
+  `).all(orderId, orderId, orderId, orderId);
   res.json(rows);
 }));
 
@@ -232,6 +241,27 @@ router.post('/inbound', (req, res) => {
 // INBOUND MESSAGE DISPATCHER & STATE MACHINE
 // -----------------------------------------------------------------------------
 
+const parseDateDefensive = (val) => {
+  if (!val) return null;
+  const s = String(val).trim();
+  const ymdMatch = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (ymdMatch) {
+    return `${ymdMatch[1]}-${ymdMatch[2].padStart(2, '0')}-${ymdMatch[3].padStart(2, '0')}`;
+  }
+  const dmyMatch = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+  if (dmyMatch) {
+    return `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
+  }
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, '0');
+    const d = String(parsed.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return s;
+};
+
 const handleIncomingMessage = async (message, toPhoneNumber) => {
   const messageId = message?.id;
   if (!messageId) return;
@@ -276,50 +306,118 @@ const handleIncomingMessage = async (message, toPhoneNumber) => {
     console.log(`[Flow Response] Token: ${flowToken} | Data:`, flowData);
 
     // 1. Check if flow_token matches an Order (Purchase Order dispatch date flow)
-    const orderRow = db.prepare(`
-      SELECT * FROM requests
-      WHERE id = ? OR po_wamid = ? OR json_extract(data, '$.poNumber') = ?
-    `).get(flowToken, flowToken, flowToken);
+    const trimmedToken = String(flowToken || '').trim();
+    let orderRow = null;
+    if (trimmedToken) {
+      orderRow = db.prepare(`
+        SELECT * FROM requests
+        WHERE id = ?
+           OR id = ('REQ-' || ?)
+           OR po_wamid = ?
+           OR json_extract(data, '$.poNumber') = ?
+           OR json_extract(data, '$.poNumber') = ('PO-' || ?)
+      `).get(trimmedToken, trimmedToken, trimmedToken, trimmedToken, trimmedToken);
+    }
 
-    if (orderRow && (flowData.dispatch_date || flowData.date)) {
-      const rawDate = flowData.dispatch_date || flowData.date;
-      const dateMatch = String(rawDate).match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
-      const cleanDate = dateMatch
-        ? `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[3].padStart(2, '0')}`
-        : String(rawDate).trim();
+    if (!orderRow && message.context?.id) {
+      orderRow = db.prepare('SELECT * FROM requests WHERE po_wamid = ? OR id = ?').get(message.context.id, message.context.id);
+    }
+    if (!orderRow && fromDigits) {
+      const openMatches = db.prepare(`
+        SELECT * FROM requests
+        WHERE (
+          json_extract(data, '$.suggestedSupplierPhone') = ?
+          OR json_extract(data, '$.supplierAsk.phone') = ?
+          OR json_extract(data, '$.supplierPhone') = ?
+        )
+        AND status NOT IN ('Completed', 'Cancelled')
+      `).all(fromDigits, fromDigits, fromDigits);
+      if (openMatches.length === 1) {
+        orderRow = openMatches[0];
+      }
+    }
+
+    const rawDispatchDate = flowData.dispatch_date || flowData.date || flowData.expected_dispatch_date || flowData.dispatchDate;
+    if (orderRow && rawDispatchDate) {
+      const cleanDate = parseDateDefensive(rawDispatchDate);
 
       const orderData = JSON.parse(orderRow.data);
-      const poNum = orderData.poNumber || orderRow.id;
+      const poNum = orderData.poNumber || `PO-${orderRow.id.replace(/^REQ-?/i, '')}`;
+      const supplierName = orderData.supplierName || orderData.suggestedSupplier || 'Supplier';
+
+      // Keep Booked or later orders from moving backwards
+      const nonBackwards = ['booked', 'dispatched', 'in transit', 'delivered', 'received', 'completed', 'cancelled', 'rejected'];
+      const currentStatus = orderRow.status || orderData.status || '';
+      const isBookedOrLater = nonBackwards.includes(currentStatus.toLowerCase());
+      const newStatus = isBookedOrLater ? currentStatus : 'Acknowledged';
+
+      const isDateChange = orderData.expectedDispatchDate && orderData.expectedDispatchDate !== cleanDate;
 
       orderData.expectedDispatchDate = cleanDate;
       orderData.dispatch_date = cleanDate;
-      orderData.booking_status = 'pending';
+      orderData.status = newStatus;
+      orderData.booking_status = orderData.booking_status || 'pending';
+      if (orderRow.po_wamid && !orderData.po_wamid) {
+        orderData.po_wamid = orderRow.po_wamid;
+      }
+      if (orderRow.po_sent_at && !orderData.po_sent_at) {
+        orderData.po_sent_at = orderRow.po_sent_at;
+      }
+
       const history = Array.isArray(orderData.history) ? [...orderData.history] : [];
       history.push({
-        status: orderData.status,
+        status: newStatus,
         updatedBy: 'Supplier (WhatsApp Flow)',
         role: 'Supplier',
         timestamp: new Date().toISOString(),
-        remarks: `Committed expected dispatch date: ${cleanDate}.`
+        remarks: isDateChange
+          ? `Supplier updated expected dispatch date: ${cleanDate}.`
+          : `Supplier selected expected dispatch date: ${cleanDate}.`
       });
       orderData.history = history;
 
-      db.prepare(`
-        UPDATE requests
-        SET dispatch_date = ?, booking_status = 'pending', reminders_sent = 0, data = ?, updated_at = datetime('now')
-        WHERE id = ?
-      `).run(cleanDate, JSON.stringify(orderData), orderRow.id);
+      const formatHumanDate = (dateStr) => {
+        try {
+          const parts = String(dateStr).split('-');
+          if (parts.length === 3) {
+            const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+            return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+          }
+        } catch {}
+        return dateStr;
+      };
 
-      notifyAdmins(
-        `Dispatch Date Confirmed: ${poNum}`,
-        `Supplier committed dispatch date: ${cleanDate} for ${orderData.productName || 'Order'} (${poNum}).`,
-        orderRow.id
-      );
+      const readableDate = formatHumanDate(cleanDate);
+      const notifMessage = isDateChange
+        ? `${supplierName} updated the dispatch date to ${readableDate} for ${poNum}`
+        : `${supplierName} selected the dispatch date ${readableDate} for ${poNum}`;
+      const chatBody = `Supplier selected dispatch date: ${readableDate}`;
+
+      // In one database transaction: update order, notify admins, update inbound message
+      withTransaction(() => {
+        db.prepare(`
+          UPDATE requests
+          SET status = ?, dispatch_date = ?, reminders_sent = 0, data = ?, updated_at = datetime('now')
+          WHERE id = ?
+        `).run(newStatus, cleanDate, JSON.stringify(orderData), orderRow.id);
+
+        notifyAdmins(
+          isDateChange ? 'Dispatch Date Updated' : 'Dispatch Date Selected',
+          notifMessage,
+          orderRow.id
+        );
+
+        db.prepare(`
+          UPDATE whatsapp_messages
+          SET order_id = ?, request_id = ?, body = ?, type = 'flow_reply'
+          WHERE provider_message_id = ? OR wamid = ?
+        `).run(orderRow.id, orderRow.id, chatBody, messageId, messageId);
+      });
 
       await sendText(
         fromDigits,
         `Thank you! We have recorded your expected dispatch date (${cleanDate}) for PO ${poNum}. Please remember to share your booking document/LR when dispatched.`,
-        { replyToWamid: messageId }
+        { replyToWamid: messageId, orderId: orderRow.id, requestId: orderRow.id }
       );
       return;
     }
@@ -381,6 +479,9 @@ const handleIncomingMessage = async (message, toPhoneNumber) => {
       );
       return;
     }
+
+    // Unmatched nfm_reply: no order or active conversation matched
+    console.warn(`[Flow Response] Unmatched nfm_reply: flow_token="${flowToken}", context_id="${message.context?.id || ''}", from="${fromDigits}". Reason: No order or active conversation matched this token or supplier phone.`);
   }
 
   // ---------------------------------------------------------------------------
@@ -444,22 +545,30 @@ const handleIncomingMessage = async (message, toPhoneNumber) => {
       });
       orderData.history = history;
 
-      db.prepare(`
-        UPDATE requests
-        SET booking_status = 'booked', lr_file_path = ?, lr_received_at = datetime('now'), status = 'Booked', data = ?, updated_at = datetime('now')
-        WHERE id = ?
-      `).run(filePath, JSON.stringify(orderData), targetOrder.id);
+      withTransaction(() => {
+        db.prepare(`
+          UPDATE requests
+          SET booking_status = 'booked', lr_file_path = ?, lr_received_at = datetime('now'), status = 'Booked', data = ?, updated_at = datetime('now')
+          WHERE id = ?
+        `).run(filePath, JSON.stringify(orderData), targetOrder.id);
 
-      notifyAdmins(
-        `LR / Booking Document Uploaded: ${poNum}`,
-        `Supplier uploaded booking proof/LR for PO ${poNum}. Status updated to Booked.`,
-        targetOrder.id
-      );
+        notifyAdmins(
+          `LR / Booking Document Uploaded: ${poNum}`,
+          `Supplier uploaded booking proof/LR for PO ${poNum}. Status updated to Booked.`,
+          targetOrder.id
+        );
+
+        db.prepare(`
+          UPDATE whatsapp_messages
+          SET order_id = ?, request_id = ?, body = ?
+          WHERE provider_message_id = ? OR wamid = ?
+        `).run(targetOrder.id, targetOrder.id, `Supplier sent a document${mediaObj?.filename ? `: ${mediaObj.filename}` : ''}`, messageId, messageId);
+      });
 
       await sendText(
         fromDigits,
         `Thank you! We received your booking document for PO ${poNum}. Your order is now marked as Booked.`,
-        { replyToWamid: messageId }
+        { replyToWamid: messageId, orderId: targetOrder.id, requestId: targetOrder.id }
       );
       return;
     }
