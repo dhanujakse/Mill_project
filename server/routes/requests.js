@@ -46,7 +46,7 @@ router.post('/', (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
-  const existing = db.prepare('SELECT status, data, needs_call FROM requests WHERE id = ?').get(req.params.id);
+  const existing = db.prepare('SELECT status, dispatch_date, data, needs_call FROM requests WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Request not found' });
   if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
     return res.status(400).json({ error: 'Request body must be an object.' });
@@ -65,8 +65,23 @@ router.put('/:id', (req, res) => {
   }
   const needsCall = isDone ? 0 : (requestData.needs_call ?? existing.needs_call ?? 0);
 
-  const dispatchDate = requestData.dispatch_date || requestData.expectedDispatchDate || null;
-  db.prepare("UPDATE requests SET status = ?, dispatch_date = COALESCE(?, dispatch_date), data = ?, needs_call = ?, updated_at = datetime('now') WHERE id = ?")
+  const hasDispatchCol = Object.prototype.hasOwnProperty.call(req.body, 'dispatch_date');
+  const hasExpectedCol = Object.prototype.hasOwnProperty.call(req.body, 'expectedDispatchDate');
+  const hasDispatchUpdate = hasDispatchCol || hasExpectedCol;
+  let dispatchDate = existing.dispatch_date || requestData.dispatch_date || requestData.expectedDispatchDate || null;
+  if (hasDispatchUpdate) {
+    if (hasDispatchCol && hasExpectedCol) {
+      dispatchDate = req.body.expectedDispatchDate !== existing.dispatch_date
+        ? (req.body.expectedDispatchDate || null)
+        : (req.body.dispatch_date || null);
+    } else {
+      dispatchDate = (hasDispatchCol ? req.body.dispatch_date : req.body.expectedDispatchDate) || null;
+    }
+    requestData.dispatch_date = dispatchDate;
+    requestData.expectedDispatchDate = dispatchDate;
+  }
+
+  db.prepare("UPDATE requests SET status = ?, dispatch_date = ?, data = ?, needs_call = ?, updated_at = datetime('now') WHERE id = ?")
     .run(requestData.status || null, dispatchDate, JSON.stringify(requestData), needsCall, req.params.id);
   const updatedRow = db.prepare('SELECT * FROM requests WHERE id = ?').get(req.params.id);
   res.json(serializeRequest(updatedRow));

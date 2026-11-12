@@ -3244,6 +3244,27 @@ export function LiveOrdersView({ state, navigateTo, goBack }) {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
+  // Re-fetch live orders & notifications every 10s while visible so WhatsApp replies show up promptly
+  useEffect(() => {
+    let isMounted = true;
+    const pollLive = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const fresh = await apiService.getRequests();
+        if (isMounted && Array.isArray(fresh)) state.setRequests(fresh);
+        if (state.setNotifications) {
+          const freshNotifs = await apiService.getNotifications();
+          if (isMounted && Array.isArray(freshNotifs)) state.setNotifications(freshNotifs);
+        }
+      } catch {}
+    };
+    const intervalId = setInterval(pollLive, 10000);
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, []);
+
   let filteredRequests = isEmployee 
     ? state.requests.filter(r => r.employeeName === user.name) 
     : state.requests;
@@ -3420,7 +3441,7 @@ export function LiveOrdersView({ state, navigateTo, goBack }) {
                       </span>
                     )}
                     {(() => {
-                      const todayStr = new Date().toISOString().slice(0, 10);
+                      const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
                       const dDate = req.dispatch_date || req.expectedDispatchDate;
                       const isBooked = req.booking_status === 'booked' || req.status === 'Booked';
                       const isOverdue = dDate && dDate < todayStr && !isBooked && req.status !== 'Received';
@@ -3502,6 +3523,12 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
         const msgs = await apiService.getWhatsAppMessages(requestId);
         if (isMounted && Array.isArray(msgs)) {
           setOrderMessages(msgs);
+        }
+        if (state.setNotifications) {
+          const freshNotifs = await apiService.getNotifications();
+          if (isMounted && Array.isArray(freshNotifs)) {
+            state.setNotifications(freshNotifs);
+          }
         }
       } catch {}
     };
@@ -3729,7 +3756,7 @@ export function OrderDetailsView({ state, navigateTo, goBack, requestId, addNoti
       proofOfReceiptName: proofOfReceiptName || req.proofOfReceiptName || "",
       lrCopy: storedLr || req.lrCopy || null,
       lrFileName: lrName || req.lrFileName || "",
-      expectedDispatchDate: newDispatchDate || req.expectedDispatchDate || expDateStr,
+      expectedDispatchDate: newDispatchDate || req.expectedDispatchDate || null,
       ...(newStatus === "Received" ? {
         storageLocation: (storageLocation || req.storageLocation || "").trim(),
         materialStoredIn: (storageLocation || req.materialStoredIn || "").trim(),

@@ -15,6 +15,7 @@ import {
   validateMetaSignature,
   toDigitsOnly,
   toE164,
+  getSupplierPhoneForOrder,
   isAvailabilityEnabled
 } from '../whatsapp.js';
 import { runMorningJobs } from '../jobs/morning.js';
@@ -242,7 +243,7 @@ router.post('/inbound', (req, res) => {
 // -----------------------------------------------------------------------------
 
 const parseDateDefensive = (val) => {
-  if (!val) return null;
+  if (val === null || val === undefined || val === '') return null;
   const s = String(val).trim();
   const ymdMatch = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
   if (ymdMatch) {
@@ -252,14 +253,51 @@ const parseDateDefensive = (val) => {
   if (dmyMatch) {
     return `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
   }
+  // Meta WhatsApp Flows DatePicker often returns Unix epoch timestamps in ms (13 digits) or sec (10 digits)
+  if (/^\d{10,13}$/.test(s)) {
+    const ms = s.length === 10 ? Number(s) * 1000 : Number(s);
+    const epochDate = new Date(ms);
+    if (!isNaN(epochDate.getTime())) {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(epochDate);
+    }
+  }
   const parsed = new Date(s);
   if (!isNaN(parsed.getTime())) {
-    const y = parsed.getFullYear();
-    const m = String(parsed.getMonth() + 1).padStart(2, '0');
-    const d = String(parsed.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(parsed);
   }
   return s;
+};
+
+const extractDispatchDateFromFlow = (flowData) => {
+  if (!flowData || typeof flowData !== 'object') return null;
+  const direct =
+    flowData.dispatch_date ||
+    flowData.date ||
+    flowData.expected_dispatch_date ||
+    flowData.dispatchDate ||
+    flowData.selected_date ||
+    flowData.new_date;
+  if (direct) return direct;
+
+  for (const [key, value] of Object.entries(flowData)) {
+    if (!value || key === 'flow_token') continue;
+    const strVal = String(value).trim();
+    if (/date/i.test(key)) return strVal;
+    if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/.test(strVal) || /^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}/.test(strVal) || /^\d{13}$/.test(strVal)) {
+      return strVal;
+    }
+  }
+  return null;
 };
 
 const handleIncomingMessage = async (message, toPhoneNumber) => {
@@ -320,24 +358,32 @@ const handleIncomingMessage = async (message, toPhoneNumber) => {
     }
 
     if (!orderRow && message.context?.id) {
-      orderRow = db.prepare('SELECT * FROM requests WHERE po_wamid = ? OR id = ?').get(message.context.id, message.context.id);
+      orderRow = db.prepare(`
+        SELECT * FROM requests
+        WHERE po_wamid = ?
+           OR id = ?
+           OR id = (SELECT COALESCE(order_id, request_id) FROM whatsapp_messages WHERE wamid = ? OR provider_message_id = ? LIMIT 1)
+      `).get(message.context.id, message.context.id, message.context.id, message.context.id);
     }
     if (!orderRow && fromDigits) {
-      const openMatches = db.prepare(`
+      const openRows = db.prepare(`
         SELECT * FROM requests
-        WHERE (
-          json_extract(data, '$.suggestedSupplierPhone') = ?
-          OR json_extract(data, '$.supplierAsk.phone') = ?
-          OR json_extract(data, '$.supplierPhone') = ?
-        )
-        AND status NOT IN ('Completed', 'Cancelled')
-      `).all(fromDigits, fromDigits, fromDigits);
+        WHERE COALESCE(status, '') NOT IN ('Completed', 'Cancelled', 'Rejected', 'Delivered', 'Received', 'Closed')
+      `).all();
+      const openMatches = openRows.filter(r => {
+        try {
+          const data = JSON.parse(r.data || '{}');
+          return getSupplierPhoneForOrder({ ...data, ...r, id: r.id, data }) === fromDigits;
+        } catch {
+          return false;
+        }
+      });
       if (openMatches.length === 1) {
         orderRow = openMatches[0];
       }
     }
 
-    const rawDispatchDate = flowData.dispatch_date || flowData.date || flowData.expected_dispatch_date || flowData.dispatchDate;
+    const rawDispatchDate = extractDispatchDateFromFlow(flowData);
     if (orderRow && rawDispatchDate) {
       const cleanDate = parseDateDefensive(rawDispatchDate);
 

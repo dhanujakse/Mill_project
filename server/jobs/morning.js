@@ -65,7 +65,18 @@ export const isOrderInTransit = (order) => {
 // DATE & TIME HELPERS (ASIA/KOLKATA SINGLE SOURCE OF TRUTH)
 // =============================================================================
 export const getKolkataDateString = (date = new Date()) => {
-  const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date;
+  let d = date;
+  if (typeof date === 'string') {
+    const trimmed = date.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+      d = new Date(trimmed.replace(' ', 'T') + 'Z');
+    } else {
+      d = new Date(trimmed);
+    }
+  } else if (typeof date === 'number') {
+    d = new Date(date);
+  }
   if (!d || isNaN(d.getTime())) return null;
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata',

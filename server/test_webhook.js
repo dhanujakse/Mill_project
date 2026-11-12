@@ -1013,6 +1013,90 @@ async function run() {
       record('Test S10: Production test order filters', false, err.message);
     }
 
+    // ------------------------------------------------------------------
+    // Test S11: Meta DatePicker epoch ms + dynamic field name + reminder context.id reply + PUT clears dispatch_date
+    // ------------------------------------------------------------------
+    try {
+      const s11 = `S11-${Date.now()}`;
+      const reminderWamid = `wamid.rem_s11_${Date.now()}`;
+      db.prepare(`
+        INSERT INTO requests (id, status, data, po_wamid, po_sent_at, reminders_sent)
+        VALUES (?, 'No Response', ?, 'wamid.po_s11', '2026-11-18 05:00:00', 1)
+      `).run(s11, JSON.stringify({ id: s11, poNumber: 'PO-S11', status: 'No Response', supplierPhone: '+919876543210' }));
+
+      // Log Day 1 reminder in whatsapp_messages
+      db.prepare(`
+        INSERT INTO whatsapp_messages (id, order_id, request_id, direction, wamid, provider_message_id, type, status, body)
+        VALUES (?, ?, ?, 'outbound', ?, ?, 'template', 'sent', 'Pending dispatch date reminder sent for PO-S11')
+      `).run(`wam-rem-${Date.now()}`, s11, s11, reminderWamid, reminderWamid);
+
+      // Supplier replies on Day 1 reminder with epoch ms (2026-11-24 in IST) and custom screen_0_DatePicker_0 key, without flow_token
+      const epoch20261124 = String(new Date('2026-11-24T00:00:00+05:30').getTime());
+      const replyWamid = `wamid.s11_reply_${Date.now()}`;
+      const payload = {
+        object: 'whatsapp_business_account',
+        entry: [{
+          changes: [{
+            value: {
+              messaging_product: 'whatsapp',
+              messages: [{
+                from: supplierPhone,
+                id: replyWamid,
+                timestamp: `${Math.floor(Date.now() / 1000)}`,
+                type: 'interactive',
+                interactive: {
+                  type: 'nfm_reply',
+                  nfm_reply: {
+                    response_json: JSON.stringify({ screen_0_DatePicker_0: epoch20261124 })
+                  }
+                },
+                context: {
+                  id: reminderWamid
+                }
+              }]
+            }
+          }]
+        }]
+      };
+
+      const res = await postWebhook(payload);
+      await wait(600);
+
+      const rowAfterReply = db.prepare('SELECT status, dispatch_date, reminders_sent, data FROM requests WHERE id = ?').get(s11);
+      const dataAfterReply = JSON.parse(rowAfterReply?.data || '{}');
+
+      // Run morning job on next day (2026-11-20): neither pending nor overdue reminder should be sent
+      const beforeMsgCount = db.prepare("SELECT count(*) as c FROM whatsapp_messages WHERE order_id = ? AND trigger LIKE '%reminder%'").get(s11).c;
+      await runMorningJobs({ force: true, now: new Date('2026-11-20T10:00:00+05:30') });
+      const afterMsgCount = db.prepare("SELECT count(*) as c FROM whatsapp_messages WHERE order_id = ? AND trigger LIKE '%reminder%'").get(s11).c;
+
+      // Test PUT clearing expectedDispatchDate
+      const putRes = await fetch(`${baseUrl}/api/requests/${s11}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({ expectedDispatchDate: '' })
+      });
+      const putJson = await putRes.json();
+      const rowAfterClear = db.prepare('SELECT dispatch_date FROM requests WHERE id = ?').get(s11);
+
+      const passedS11 = res.status === 200 &&
+        rowAfterReply?.dispatch_date === '2026-11-24' &&
+        dataAfterReply?.expectedDispatchDate === '2026-11-24' &&
+        rowAfterReply?.status === 'Acknowledged' &&
+        beforeMsgCount === afterMsgCount &&
+        putRes.status === 200 &&
+        rowAfterClear?.dispatch_date === null &&
+        putJson?.dispatch_date === null;
+
+      record('Test S11: Meta DatePicker epoch ms, dynamic field key, reminder context.id reply, stops reminders, PUT clears date', passedS11);
+      db.prepare('DELETE FROM requests WHERE id = ?').run(s11);
+    } catch (err) {
+      record('Test S11: Meta DatePicker & dynamic reply edge cases', false, err.message);
+    }
+
   } finally {
     console.log('\n====================================================');
     console.log('                   Test Summary');

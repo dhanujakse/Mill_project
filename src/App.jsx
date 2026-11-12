@@ -189,7 +189,7 @@ export default function App() {
         const newHistory = [...(req.history || []), systemLog];
         const updatedReq = {
           ...req,
-          expectedDispatchDate: expDateStr,
+          expectedDispatchDate: req.expectedDispatchDate || null,
           status: "Delayed",
           history: newHistory
         };
@@ -709,6 +709,7 @@ export default function App() {
         branding,
         activeRole,
         notifications,
+        setNotifications,
         clearNotifications,
         markNotificationsRead,
         updateBranding,
