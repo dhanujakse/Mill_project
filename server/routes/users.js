@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { db } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { serializeUser } from '../serializers.js';
-import { validateUserFields, asText, validatePassword, USER_ROLES, NAME_REGEX, EMAIL_REGEX, PHONE_REGEX } from '../validation.js';
+import { validateUserFields, asText, validatePassword, USER_ROLES, NAME_REGEX, EMAIL_REGEX, PHONE_REGEX, compactPhone, normalizePhone } from '../validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 
 const router = Router();
@@ -33,8 +33,7 @@ router.post('/', requireRole('Main Admin'), asyncHandler(async (req, res) => {
   const rawPhone = asText(body.phone);
   let phone = rawPhone;
   if (phone) {
-    const digits = phone.replace(/\D/g, '');
-    phone = digits.length === 10 ? `91${digits}` : digits;
+    phone = normalizePhone(phone);
   }
 
   if (!username) return res.status(400).json({ error: 'Username is required.' });
@@ -122,7 +121,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
         if (!EMAIL_REGEX.test(email)) return res.status(400).json({ error: 'Invalid email format.' });
       }
       if (body.phone !== undefined && phone) {
-        if (!PHONE_REGEX.test(phone)) return res.status(400).json({ error: 'Invalid Indian mobile number.' });
+        if (!PHONE_REGEX.test(compactPhone(phone))) return res.status(400).json({ error: 'Invalid Indian mobile number.' });
       }
     }
     if (email) {
@@ -161,8 +160,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
     phone: body.phone !== undefined ? (() => {
       const p = asText(body.phone);
       if (!p) return '';
-      const d = p.replace(/\D/g, '');
-      return d.length === 10 ? `91${d}` : d;
+      return normalizePhone(p);
     })() : currentProfile.phone,
     department: (isAdmin && body.department !== undefined) ? body.department : currentProfile.department,
     avatar: body.avatar !== undefined ? body.avatar : (currentProfile.avatar || ''),

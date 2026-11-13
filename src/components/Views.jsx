@@ -93,6 +93,11 @@ function StoredImage({ value, ...imgProps }) {
   return src ? <img src={src} {...imgProps} /> : null;
 }
 
+// Indian mobile, typed any usual way: 9025279189, +91 90252 79189, 919025279189
+// (the stored form) or 09025279189. Must match server/validation.js.
+const isValidIndianMobile = (value) =>
+  /^(?:\+?91|0)?[6-9]\d{9}$/.test(String(value || '').replace(/[\s\-().]/g, ''));
+
 // Keeps the line breaks a user typed into a multi-line description (only
 // Windows/Android CRLF pairs are folded into "\n"); never joins lines.
 const normalizeMultiline = (text) => String(text || '').replace(/\r\n?/g, '\n').trim();
@@ -6430,8 +6435,7 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
       if (!value.trim()) {
         err = "Phone number is required.";
       } else {
-        const phoneRegex = /^(?:\+91)?[6-9]\d{9}$/;
-        if (!phoneRegex.test(value.trim())) {
+        if (!isValidIndianMobile(value)) {
           err = "Invalid Indian mobile number (must be a 10-digit number, optionally starting with +91).";
         }
       }
@@ -6492,8 +6496,7 @@ export function UserManagementView({ state, navigateTo, openModal, closeModal, s
 
     if (!phone.trim()) newErrors.phone = "Phone number is required.";
     else {
-      const phoneRegex = /^(?:\+91)?[6-9]\d{9}$/;
-      if (!phoneRegex.test(phone.trim())) {
+      if (!isValidIndianMobile(phone)) {
         newErrors.phone = "Invalid Indian mobile number (must be a 10-digit number, optionally starting with +91).";
       }
     }
@@ -7215,13 +7218,12 @@ export function AvatarEditor({ user, onSave, onClose, initialEditingName = false
     }
     let cleanPhone = (phone || "").trim();
     if (cleanPhone) {
-      const phoneRegex = /^(?:\+91)?[6-9]\d{9}$/;
-      if (!phoneRegex.test(cleanPhone)) {
+      if (!isValidIndianMobile(cleanPhone)) {
         setPhoneError("Invalid Indian mobile number (must be a 10-digit number, optionally starting with +91).");
         return;
       }
       const digits = cleanPhone.replace(/\D/g, '');
-      cleanPhone = digits.length === 10 ? `91${digits}` : digits;
+      cleanPhone = `91${digits.slice(-10)}`;
     }
 
     const finalAvatar = customPhoto
